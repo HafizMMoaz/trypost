@@ -61,6 +61,7 @@ test('onboarding renders activation status and connection props', function () {
             ->missing('samplePrompt')
             ->has('platforms', collect(Platform::cases())->filter->isConnectable()->count())
             ->where('accounts.0.id', $socialAccount->id)
+            ->has('selfHosted')
             ->where('auth.user.first_name', $this->user->firstName())
         );
 
