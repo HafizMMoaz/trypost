@@ -57,16 +57,15 @@ const socialConnectedElsewhere = computed(
 // (auto-complete POST can fail before completed_at lands).
 useOnboardingLiveReload({
     only: reloadOnly,
-    enabled: () =>
-        !props.status.completed_at && !props.status.dismissed_at,
+    enabled: () => !props.status.completed_at && !props.status.dismissed_at,
 });
 
 const stampCompletionIfReady = (): void => {
     if (
-        ! props.status.all_complete ||
+        !props.status.all_complete ||
         props.status.completed_at ||
         completeForm.processing ||
-        ! props.canSkipSteps ||
+        !props.canSkipSteps ||
         completeAttempts >= maxCompleteAttempts
     ) {
         return;
