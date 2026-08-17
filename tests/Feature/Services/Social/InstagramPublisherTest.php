@@ -222,7 +222,11 @@ test('instagram publisher omits collaborators when none are set', function () {
 
     $this->publisher->publish($this->postPlatform);
 
-    Http::assertSent(fn ($request) => ! isset($request['collaborators']));
+    Http::assertSent(function ($request) {
+        return str_contains($request->url(), '/ig_123456789/media')
+            && ! str_contains($request->url(), 'media_publish')
+            && ! isset($request['collaborators']);
+    });
 });
 
 test('instagram publisher does not send collaborators on a story', function () {
@@ -252,7 +256,8 @@ test('instagram publisher does not send collaborators on a story', function () {
     $this->publisher->publish($this->postPlatform);
 
     Http::assertSent(function ($request) {
-        return ! str_contains($request->url(), 'media_publish')
+        return str_contains($request->url(), '/ig_123456789/media')
+            && ! str_contains($request->url(), 'media_publish')
             && ! isset($request['collaborators']);
     });
 });
