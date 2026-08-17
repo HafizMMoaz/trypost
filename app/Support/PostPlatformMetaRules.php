@@ -45,6 +45,11 @@ class PostPlatformMetaRules
             // Instagram / Facebook
             'platforms.*.meta.aspect_ratio' => ['sometimes', 'nullable', 'string', Rule::enum(AspectRatio::class)],
 
+            // Instagram — up to 3 usernames invited as collaborators (Reels, single
+            // images, and carousels only; Instagram ignores this on Stories).
+            'platforms.*.meta.collaborators' => ['sometimes', 'nullable', 'array', 'max:3'],
+            'platforms.*.meta.collaborators.*' => ['string', 'max:30'],
+
             // LinkedIn — title shown on a document (PDF carousel) post
             'platforms.*.meta.document_title' => ['sometimes', 'nullable', 'string', 'max:300'],
 

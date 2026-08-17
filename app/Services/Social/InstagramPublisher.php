@@ -117,19 +117,21 @@ class InstagramPublisher
             $params['alt_text'] = $alt;
         }
 
-        $containerId = $this->createContainer($instagramId, $params, 'container');
+        $containerId = $this->createContainer($instagramId, $this->withCollaborators($params), 'container');
 
         return $this->finishContainer($instagramId, $accessToken, $containerId);
     }
 
     private function publishReel(string $instagramId, string $accessToken, ?string $content, $media): array
     {
-        $containerId = $this->createContainer($instagramId, [
+        $params = [
             'video_url' => $media->url,
             'caption' => $content,
             'media_type' => 'REELS',
             'access_token' => $accessToken,
-        ], 'reel container');
+        ];
+
+        $containerId = $this->createContainer($instagramId, $this->withCollaborators($params), 'reel container');
 
         return $this->finishContainer($instagramId, $accessToken, $containerId);
     }
@@ -233,12 +235,12 @@ class InstagramPublisher
             $this->waitForMediaProcessing($childId, $accessToken, $workflow);
         }
 
-        $carouselId = $this->createContainer($instagramId, [
+        $carouselId = $this->createContainer($instagramId, $this->withCollaborators([
             'media_type' => 'CAROUSEL',
             'caption' => $content,
             'children' => implode(',', $childContainers),
             'access_token' => $accessToken,
-        ], 'carousel container');
+        ]), 'carousel container');
 
         return $this->finishContainer($instagramId, $accessToken, $carouselId);
     }
@@ -475,6 +477,28 @@ class InstagramPublisher
             retryDelaySeconds: self::STATUS_RETRY_DELAY_SECONDS,
             maxRetries: self::STATUS_MAX_RETRIES,
         );
+    }
+
+    /**
+     * Adds the up-to-3 usernames invited as collaborators, when set. Applies
+     * to the container that actually gets published (single image, Reel, or
+     * the carousel's parent container) - Instagram does not accept it on
+     * Stories or on individual carousel child items.
+     *
+     * @param  array<string, mixed>  $parameters
+     * @return array<string, mixed>
+     */
+    private function withCollaborators(array $parameters): array
+    {
+        $collaborators = data_get($this->postPlatform->meta, 'collaborators');
+
+        if (empty($collaborators)) {
+            return $parameters;
+        }
+
+        $parameters['collaborators'] = json_encode(array_values($collaborators));
+
+        return $parameters;
     }
 
     /**
