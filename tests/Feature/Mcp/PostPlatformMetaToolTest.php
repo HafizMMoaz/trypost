@@ -72,6 +72,41 @@ test('create post persists LinkedIn document_title meta', function () {
     expect(PostPlatform::where('social_account_id', $linkedin->id)->sole()->meta['document_title'])->toBe('Q2 Report');
 });
 
+test('create post persists Instagram collaborators meta', function () {
+    $instagram = SocialAccount::factory()->create(['workspace_id' => $this->workspace->id, 'platform' => Platform::Instagram]);
+
+    $response = TryPostServer::actingAs($this->user)
+        ->tool(CreatePostTool::class, [
+            'content' => 'On The Ground ep. 42',
+            'platforms' => [[
+                'social_account_id' => $instagram->id,
+                'content_type' => ContentType::InstagramReel->value,
+                'meta' => ['collaborators' => ['cohost_one', 'cohost_two']],
+            ]],
+        ]);
+
+    $response->assertOk();
+
+    expect(PostPlatform::where('social_account_id', $instagram->id)->sole()->meta['collaborators'])
+        ->toBe(['cohost_one', 'cohost_two']);
+});
+
+test('create post rejects more than 3 Instagram collaborators', function () {
+    $instagram = SocialAccount::factory()->create(['workspace_id' => $this->workspace->id, 'platform' => Platform::Instagram]);
+
+    $response = TryPostServer::actingAs($this->user)
+        ->tool(CreatePostTool::class, [
+            'content' => 'Too many collaborators',
+            'platforms' => [[
+                'social_account_id' => $instagram->id,
+                'content_type' => ContentType::InstagramReel->value,
+                'meta' => ['collaborators' => ['a', 'b', 'c', 'd']],
+            ]],
+        ]);
+
+    $response->assertHasErrors(['platforms.0.meta.collaborators']);
+});
+
 test('update post merges per-platform meta', function () {
     $post = Post::factory()->create([
         'workspace_id' => $this->workspace->id,

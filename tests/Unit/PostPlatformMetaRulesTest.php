@@ -24,6 +24,7 @@ test('shared meta rules still include non-pinterest platform fields', function (
 
     expect($rules)->toHaveKeys([
         'platforms.*.meta.aspect_ratio',
+        'platforms.*.meta.collaborators',
         'platforms.*.meta.privacy_level',
         'platforms.*.meta.board_id',
         'platforms.*.meta.channel_id',

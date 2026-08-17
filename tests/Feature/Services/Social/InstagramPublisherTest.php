@@ -145,6 +145,160 @@ test('instagram publisher can publish reel', function () {
     });
 });
 
+test('instagram publisher includes collaborators on a reel container', function () {
+    $this->postPlatform->update([
+        'content_type' => ContentType::InstagramReel,
+        'meta' => ['collaborators' => ['alice', 'bob']],
+    ]);
+
+    $this->post->update([
+        'media' => [[
+            'id' => 'test-media-video',
+            'path' => 'media/2026-01/test-video.mp4',
+            'url' => 'https://example.com/media/2026-01/test-video.mp4',
+            'mime_type' => 'video/mp4',
+            'original_filename' => 'test.mp4',
+        ]],
+    ]);
+
+    Http::fake([
+        'https://graph.instagram.com/v25.0/ig_123456789/media' => Http::response(['id' => 'container-123'], 200),
+        'https://graph.instagram.com/v25.0/container-123*' => Http::response(['status_code' => 'FINISHED'], 200),
+        'https://graph.instagram.com/v25.0/ig_123456789/media_publish' => Http::response(['id' => 'reel-123456789'], 200),
+        'https://graph.instagram.com/v25.0/reel-123456789*' => Http::response(['permalink' => 'https://www.instagram.com/reel/ABC123/'], 200),
+    ]);
+
+    $this->publisher->publish($this->postPlatform);
+
+    Http::assertSent(function ($request) {
+        return str_contains($request->url(), '/ig_123456789/media')
+            && ! str_contains($request->url(), 'media_publish')
+            && ($request['collaborators'] ?? null) === json_encode(['alice', 'bob']);
+    });
+});
+
+test('instagram publisher includes collaborators on a single-image container', function () {
+    $this->postPlatform->update(['meta' => ['collaborators' => ['alice']]]);
+
+    $this->post->update([
+        'media' => [[
+            'id' => 'test-media-id',
+            'path' => 'media/2026-01/test-image.jpg',
+            'url' => 'https://example.com/media/2026-01/test-image.jpg',
+            'mime_type' => 'image/jpeg',
+            'original_filename' => 'test.jpg',
+        ]],
+    ]);
+
+    Http::fake([
+        'https://graph.instagram.com/v25.0/ig_123456789/media' => Http::response(['id' => 'container-123'], 200),
+        'https://graph.instagram.com/v25.0/container-123*' => Http::response(['status_code' => 'FINISHED'], 200),
+        'https://graph.instagram.com/v25.0/ig_123456789/media_publish' => Http::response(['id' => 'media-123456789'], 200),
+        'https://graph.instagram.com/v25.0/media-123456789*' => Http::response(['permalink' => 'https://www.instagram.com/p/ABC123/'], 200),
+    ]);
+
+    $this->publisher->publish($this->postPlatform);
+
+    Http::assertSent(fn ($request) => ($request['collaborators'] ?? null) === json_encode(['alice']));
+});
+
+test('instagram publisher omits collaborators when none are set', function () {
+    $this->post->update([
+        'media' => [[
+            'id' => 'test-media-id',
+            'path' => 'media/2026-01/test-image.jpg',
+            'url' => 'https://example.com/media/2026-01/test-image.jpg',
+            'mime_type' => 'image/jpeg',
+            'original_filename' => 'test.jpg',
+        ]],
+    ]);
+
+    Http::fake([
+        'https://graph.instagram.com/v25.0/ig_123456789/media' => Http::response(['id' => 'container-123'], 200),
+        'https://graph.instagram.com/v25.0/container-123*' => Http::response(['status_code' => 'FINISHED'], 200),
+        'https://graph.instagram.com/v25.0/ig_123456789/media_publish' => Http::response(['id' => 'media-123456789'], 200),
+        'https://graph.instagram.com/v25.0/media-123456789*' => Http::response(['permalink' => 'https://www.instagram.com/p/ABC123/'], 200),
+    ]);
+
+    $this->publisher->publish($this->postPlatform);
+
+    Http::assertSent(fn ($request) => ! isset($request['collaborators']));
+});
+
+test('instagram publisher does not send collaborators on a story', function () {
+    Storage::fake();
+    $this->postPlatform->update([
+        'content_type' => ContentType::InstagramStory,
+        'meta' => ['collaborators' => ['alice']],
+    ]);
+
+    $this->post->update([
+        'media' => [[
+            'id' => 'test-media-video',
+            'path' => 'media/2026-01/test-video.mp4',
+            'url' => 'https://example.com/media/2026-01/test-video.mp4',
+            'mime_type' => 'video/mp4',
+            'original_filename' => 'test.mp4',
+        ]],
+    ]);
+
+    Http::fake([
+        'https://graph.instagram.com/v25.0/ig_123456789/media' => Http::response(['id' => 'container-123'], 200),
+        'https://graph.instagram.com/v25.0/container-123*' => Http::response(['status_code' => 'FINISHED'], 200),
+        'https://graph.instagram.com/v25.0/ig_123456789/media_publish' => Http::response(['id' => 'story-123456789'], 200),
+        'https://graph.instagram.com/v25.0/story-123456789*' => Http::response(['permalink' => 'https://www.instagram.com/stories/testuser/ABC123/'], 200),
+    ]);
+
+    $this->publisher->publish($this->postPlatform);
+
+    Http::assertSent(function ($request) {
+        return ! str_contains($request->url(), 'media_publish')
+            && ! isset($request['collaborators']);
+    });
+});
+
+test('instagram publisher puts collaborators only on the carousel parent container, not child items', function () {
+    $this->postPlatform->update(['meta' => ['collaborators' => ['alice', 'bob']]]);
+
+    $mediaItems = [];
+    for ($i = 0; $i < 2; $i++) {
+        $mediaItems[] = [
+            'id' => "test-media-{$i}",
+            'path' => "media/2026-01/test-image-{$i}.jpg",
+            'url' => "https://example.com/media/2026-01/test-image-{$i}.jpg",
+            'mime_type' => 'image/jpeg',
+            'original_filename' => "test-{$i}.jpg",
+        ];
+    }
+    $this->post->update(['media' => $mediaItems]);
+
+    Http::fake([
+        'https://graph.instagram.com/v25.0/ig_123456789/media' => Http::sequence()
+            ->push(['id' => 'child-1'], 200)
+            ->push(['id' => 'child-2'], 200)
+            ->push(['id' => 'carousel-container-123'], 200),
+        'https://graph.instagram.com/v25.0/carousel-container-123*' => Http::response(['status_code' => 'FINISHED'], 200),
+        'https://graph.instagram.com/v25.0/ig_123456789/media_publish' => Http::response(['id' => 'carousel-123456789'], 200),
+        'https://graph.instagram.com/v25.0/carousel-123456789*' => Http::response(['permalink' => 'https://www.instagram.com/p/CAROUSEL123/'], 200),
+    ]);
+
+    $this->publisher->publish($this->postPlatform);
+
+    $mediaCreationRequests = collect(Http::recorded())
+        ->map(fn ($pair) => $pair[0])
+        ->filter(fn ($request) => str_contains($request->url(), '/ig_123456789/media')
+            && ! str_contains($request->url(), 'media_publish'));
+
+    $childRequests = $mediaCreationRequests->filter(fn ($request) => isset($request['is_carousel_item']));
+    $parentRequests = $mediaCreationRequests->filter(fn ($request) => isset($request['children']));
+
+    expect($childRequests)->toHaveCount(2)
+        ->and($parentRequests)->toHaveCount(1);
+
+    expect($childRequests->every(fn ($request) => ! isset($request['collaborators'])))->toBeTrue();
+    expect($parentRequests->first()['collaborators'])->toBe(json_encode(['alice', 'bob']));
+});
+
 test('instagram publisher fits an image story to 9:16 and posts the hosted copy', function () {
     Storage::fake();
     $this->postPlatform->update(['content_type' => ContentType::InstagramStory]);

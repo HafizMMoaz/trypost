@@ -192,7 +192,7 @@ it('persists per-platform meta across networks on store', function () {
         ->postJson(route('api.posts.store'), [
             'content' => 'Cross-platform',
             'platforms' => [
-                ['social_account_id' => $instagram->id, 'content_type' => ContentType::InstagramFeed->value, 'meta' => ['aspect_ratio' => '4:5']],
+                ['social_account_id' => $instagram->id, 'content_type' => ContentType::InstagramFeed->value, 'meta' => ['aspect_ratio' => '4:5', 'collaborators' => ['alice', 'bob']]],
                 ['social_account_id' => $pinterest->id, 'content_type' => ContentType::PinterestPin->value, 'meta' => ['board_id' => 'board-99']],
                 ['social_account_id' => $tiktok->id, 'content_type' => ContentType::TikTokVideo->value, 'meta' => ['privacy_level' => 'SELF_ONLY', 'allow_comments' => true]],
             ],
@@ -200,9 +200,26 @@ it('persists per-platform meta across networks on store', function () {
         ->assertCreated();
 
     expect(PostPlatform::where('social_account_id', $instagram->id)->sole()->meta['aspect_ratio'])->toBe('4:5')
+        ->and(PostPlatform::where('social_account_id', $instagram->id)->sole()->meta['collaborators'])->toBe(['alice', 'bob'])
         ->and(PostPlatform::where('social_account_id', $pinterest->id)->sole()->meta['board_id'])->toBe('board-99')
         ->and(PostPlatform::where('social_account_id', $tiktok->id)->sole()->meta['privacy_level'])->toBe('SELF_ONLY')
         ->and(PostPlatform::where('social_account_id', $tiktok->id)->sole()->meta['allow_comments'])->toBeTrue();
+});
+
+it('rejects more than 3 instagram collaborators', function () {
+    $instagram = SocialAccount::factory()->create(['workspace_id' => $this->workspace->id, 'platform' => Platform::Instagram]);
+
+    $this->withHeaders($this->headers)
+        ->postJson(route('api.posts.store'), [
+            'content' => 'Too many collaborators',
+            'platforms' => [
+                ['social_account_id' => $instagram->id, 'content_type' => ContentType::InstagramFeed->value, 'meta' => [
+                    'collaborators' => ['alice', 'bob', 'carol', 'dave'],
+                ]],
+            ],
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors(['platforms.0.meta.collaborators']);
 });
 
 it('allows saving a Discord draft without a channel', function () {
