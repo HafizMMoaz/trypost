@@ -16,4 +16,14 @@ final class SocialMediaDerivativeDirectory
     public const string CROPS = 'social-crops';
 
     public const string TIKTOK_PHOTOS = 'social-tiktok-photos';
+
+    /**
+     * Every directory a publisher hosts a pull-from-URL derivative in.
+     *
+     * @var list<string>
+     */
+    public const array ALL = [
+        self::CROPS,
+        self::TIKTOK_PHOTOS,
+    ];
 }

@@ -10,30 +10,19 @@ use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Storage;
 
-#[Signature('social:prune-derivatives')]
+#[Signature('social:prune-derivatives {--hours=1 : Delete derivatives older than this many hours}')]
 #[Description('Delete hosted social-media image derivatives (aspect-ratio crops, TikTok resized photos) once no platform still needs to pull them')]
 class PruneSocialMediaDerivatives extends Command
 {
-    private const MAX_AGE_HOURS = 1;
-
-    /**
-     * Every directory a publisher hosts a pull-from-URL derivative in. Add a
-     * new network's directory here - nowhere else - when it starts hosting
-     * derivatives a platform fetches asynchronously.
-     *
-     * @var list<string>
-     */
-    private const DIRECTORIES = [
-        SocialMediaDerivativeDirectory::CROPS,
-        SocialMediaDerivativeDirectory::TIKTOK_PHOTOS,
-    ];
+    private const int DEFAULT_MAX_AGE_HOURS = 1;
 
     public function handle(): int
     {
-        $threshold = now()->subHours(self::MAX_AGE_HOURS)->getTimestamp();
+        $hours = max(0, (int) ($this->option('hours') ?? self::DEFAULT_MAX_AGE_HOURS));
+        $threshold = now()->subHours($hours)->getTimestamp();
         $pruned = 0;
 
-        foreach (self::DIRECTORIES as $directory) {
+        foreach (SocialMediaDerivativeDirectory::ALL as $directory) {
             foreach (Storage::files($directory) as $path) {
                 $modifiedAt = Storage::lastModified($path);
 
