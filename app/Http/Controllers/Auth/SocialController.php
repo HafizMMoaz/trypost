@@ -44,6 +44,7 @@ class SocialController extends Controller
             'connectedAccounts' => SocialAccountResource::collection(
                 $workspace->socialAccounts()->orderBy('id')->get(),
             )->resolve(),
+            'selfHosted' => (bool) config('trypost.self_hosted'),
         ]);
     }
 

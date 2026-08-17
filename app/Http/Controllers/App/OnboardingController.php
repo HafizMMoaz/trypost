@@ -56,6 +56,7 @@ class OnboardingController extends Controller
             'accounts' => fn (): array => SocialAccountResource::collection(
                 $workspace->socialAccounts()->orderBy('id')->get(),
             )->resolve(),
+            'selfHosted' => fn (): bool => (bool) config('trypost.self_hosted'),
         ]);
     }
 
