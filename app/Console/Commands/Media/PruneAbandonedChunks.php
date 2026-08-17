@@ -27,8 +27,17 @@ class PruneAbandonedChunks extends Command
         $pruned = 0;
 
         foreach (glob("{$directory}/*") ?: [] as $file) {
-            if (is_file($file) && filemtime($file) < $threshold) {
-                unlink($file);
+            if (! is_file($file)) {
+                continue;
+            }
+
+            $modifiedAt = @filemtime($file);
+
+            if ($modifiedAt === false || $modifiedAt >= $threshold) {
+                continue;
+            }
+
+            if (@unlink($file)) {
                 $pruned++;
             }
         }
