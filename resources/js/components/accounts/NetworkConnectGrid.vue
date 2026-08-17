@@ -38,10 +38,12 @@ const props = withDefaults(
         platforms: AvailablePlatform[];
         connectedAccounts?: ConnectedAccount[];
         gridClass?: string;
+        selfHosted?: boolean;
     }>(),
     {
         connectedAccounts: () => [],
         gridClass: 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5',
+        selfHosted: false,
     },
 );
 
@@ -126,33 +128,6 @@ const platformTheme: Record<
 const themeFor = (value: string) =>
     platformTheme[value] ?? { bg: 'bg-muted', rotate: '', image: '' };
 
-// One account per network: map each connected network to its account so every
-// platform card belonging to that network reflects the connection.
-const connectedByNetwork = computed((): Record<string, ConnectedAccount> => {
-    const map: Record<string, ConnectedAccount> = {};
-
-    for (const account of props.connectedAccounts) {
-        if (!map[account.network]) {
-            map[account.network] = account;
-        }
-    }
-
-    return map;
-});
-
-// platform value -> the account occupying its network (if any).
-const cardConnection = computed(
-    (): Record<string, ConnectedAccount | undefined> => {
-        const map: Record<string, ConnectedAccount | undefined> = {};
-
-        for (const platform of props.platforms) {
-            map[platform.value] = connectedByNetwork.value[platform.network];
-        }
-
-        return map;
-    },
-);
-
 const telegramOpen = ref(false);
 const instagramOpen = ref(false);
 const disconnectModal = ref<InstanceType<typeof ConfirmDeleteModal> | null>(
@@ -209,14 +184,6 @@ const openConnect = (platformValue: string) => {
     openOAuthPopup(platformValue);
 };
 
-const connectPlatform = (platformValue: string) => {
-    if (cardConnection.value[platformValue]) {
-        return;
-    }
-
-    openConnect(platformValue);
-};
-
 const reconnectAccount = (account: ConnectedAccount) => {
     const entry = connectEntryFor(account.platform);
 
@@ -237,19 +204,53 @@ const CardState = {
 
 type CardStateValue = (typeof CardState)[keyof typeof CardState];
 
-const cardState = computed((): Record<string, CardStateValue> => {
-    const map: Record<string, CardStateValue> = {};
+interface GridCard {
+    key: string;
+    platform: AvailablePlatform;
+    account?: ConnectedAccount;
+    state: CardStateValue;
+    isAdditional: boolean;
+}
+
+// One card per connected account, plus a standing "connect" card per network:
+// always when nothing is connected yet, and additionally (self-hosted only,
+// where the backend has no one-account-per-network limit) alongside existing
+// connections so another identity - a second LinkedIn page, another Instagram
+// account, etc. - can be added instead of the network staying locked at one.
+const cards = computed((): GridCard[] => {
+    const result: GridCard[] = [];
 
     for (const platform of props.platforms) {
-        const account = connectedByNetwork.value[platform.network];
-        map[platform.value] = !account
-            ? CardState.Connect
-            : needsReconnect(account)
-              ? CardState.Reconnect
-              : CardState.Connected;
+        const accountsForNetwork = props.connectedAccounts.filter(
+            (account) => account.network === platform.network,
+        );
+        const visibleAccounts = props.selfHosted
+            ? accountsForNetwork
+            : accountsForNetwork.slice(0, 1);
+
+        for (const account of visibleAccounts) {
+            result.push({
+                key: account.id,
+                platform,
+                account,
+                state: needsReconnect(account)
+                    ? CardState.Reconnect
+                    : CardState.Connected,
+                isAdditional: false,
+            });
+        }
+
+        if (visibleAccounts.length === 0 || props.selfHosted) {
+            result.push({
+                key: `${platform.value}-connect`,
+                platform,
+                state: CardState.Connect,
+                isAdditional: visibleAccounts.length > 0,
+            });
+        }
     }
 
-    return map;
+    return result;
 });
 </script>
 
@@ -257,26 +258,26 @@ const cardState = computed((): Record<string, CardStateValue> => {
     <div>
         <div :class="['grid gap-4', gridClass]">
             <div
-                v-for="platform in platforms"
-                :key="platform.value"
+                v-for="card in cards"
+                :key="card.key"
                 :class="[
                     'group relative flex flex-col items-center gap-3 rounded-xl border-2 border-foreground p-4 text-center shadow-xs transition-shadow',
-                    cardState[platform.value] === CardState.Connected
+                    card.state === CardState.Connected
                         ? 'bg-emerald-50'
-                        : cardState[platform.value] === CardState.Reconnect
+                        : card.state === CardState.Reconnect
                           ? 'bg-amber-50'
                           : 'bg-card hover:shadow-md',
                 ]"
             >
                 <span
-                    v-if="cardState[platform.value] === CardState.Connected"
+                    v-if="card.state === CardState.Connected"
                     class="absolute -top-2 -right-2 inline-flex size-6 items-center justify-center rounded-full border-2 border-foreground bg-emerald-200 text-emerald-700 shadow-2xs"
                     aria-hidden="true"
                 >
                     <IconCheck class="size-3.5" stroke-width="3" />
                 </span>
                 <span
-                    v-else-if="cardState[platform.value] === CardState.Reconnect"
+                    v-else-if="card.state === CardState.Reconnect"
                     class="absolute -top-2 -right-2 inline-flex size-6 items-center justify-center rounded-full border-2 border-foreground bg-amber-200 text-amber-700 shadow-2xs"
                     aria-hidden="true"
                 >
@@ -285,14 +286,14 @@ const cardState = computed((): Record<string, CardStateValue> => {
 
                 <div
                     :class="[
-                        themeFor(platform.value).bg,
-                        themeFor(platform.value).rotate,
+                        themeFor(card.platform.value).bg,
+                        themeFor(card.platform.value).rotate,
                         'inline-flex size-16 items-center justify-center rounded-2xl border-2 border-foreground shadow-sm transition-transform group-hover:!rotate-0',
                     ]"
                 >
                     <img
-                        :src="themeFor(platform.value).image"
-                        :alt="platform.label"
+                        :src="themeFor(card.platform.value).image"
+                        :alt="card.platform.label"
                         class="size-9 rounded-lg"
                         loading="lazy"
                     />
@@ -302,19 +303,19 @@ const cardState = computed((): Record<string, CardStateValue> => {
                     <span
                         class="block truncate text-sm font-semibold text-foreground"
                     >
-                        <template v-if="platform.label.includes('(')">
-                            {{ platform.label.split('(')[0].trim() }}
+                        <template v-if="card.platform.label.includes('(')">
+                            {{ card.platform.label.split('(')[0].trim() }}
                         </template>
-                        <template v-else>{{ platform.label }}</template>
+                        <template v-else>{{ card.platform.label }}</template>
                     </span>
                     <p
-                        v-if="cardState[platform.value] === CardState.Connect"
+                        v-if="card.state === CardState.Connect"
                         class="mt-0.5 line-clamp-2 text-xs leading-tight text-foreground/60"
                     >
-                        {{ getPlatformDescription(platform.value) }}
+                        {{ getPlatformDescription(card.platform.value) }}
                     </p>
                     <p
-                        v-else-if="cardState[platform.value] === CardState.Reconnect"
+                        v-else-if="card.state === CardState.Reconnect"
                         class="mt-0.5 truncate text-xs leading-tight font-medium text-amber-700"
                     >
                         {{ $t('accounts.connection_lost') }}
@@ -323,24 +324,24 @@ const cardState = computed((): Record<string, CardStateValue> => {
                         v-else
                         class="mt-0.5 truncate text-xs leading-tight text-foreground/70"
                     >
-                        {{ cardConnection[platform.value]?.display_label }}
+                        {{ card.account?.display_label }}
                     </p>
                 </div>
 
                 <Button
-                    v-if="cardState[platform.value] === CardState.Reconnect"
+                    v-if="card.state === CardState.Reconnect"
                     size="sm"
                     class="mt-auto w-full"
-                    @click="reconnectAccount(cardConnection[platform.value]!)"
+                    @click="reconnectAccount(card.account!)"
                 >
                     {{ $t('accounts.reconnect') }}
                 </Button>
                 <Button
-                    v-else-if="cardState[platform.value] === CardState.Connected"
+                    v-else-if="card.state === CardState.Connected"
                     variant="destructive"
                     size="sm"
                     class="mt-auto w-full"
-                    @click="disconnectAccount(cardConnection[platform.value]!)"
+                    @click="disconnectAccount(card.account!)"
                 >
                     {{ $t('accounts.disconnect') }}
                 </Button>
@@ -348,9 +349,13 @@ const cardState = computed((): Record<string, CardStateValue> => {
                     v-else
                     size="sm"
                     class="mt-auto w-full"
-                    @click="connectPlatform(platform.value)"
+                    @click="openConnect(card.platform.value)"
                 >
-                    {{ $t('accounts.connect_cta') }}
+                    {{
+                        card.isAdditional
+                            ? $t('accounts.connect_another_cta')
+                            : $t('accounts.connect_cta')
+                    }}
                 </Button>
             </div>
         </div>

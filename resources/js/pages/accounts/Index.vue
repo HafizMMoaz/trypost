@@ -11,6 +11,7 @@ import AppLayout from '@/layouts/AppLayout.vue';
 defineProps<{
     platforms: AvailablePlatform[];
     connectedAccounts: ConnectedAccount[];
+    selfHosted: boolean;
 }>();
 </script>
 
@@ -27,6 +28,7 @@ defineProps<{
             <NetworkConnectGrid
                 :platforms="platforms"
                 :connected-accounts="connectedAccounts"
+                :self-hosted="selfHosted"
             />
         </div>
     </AppLayout>
