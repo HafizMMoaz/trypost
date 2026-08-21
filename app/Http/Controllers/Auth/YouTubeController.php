@@ -139,12 +139,13 @@ class YouTubeController extends SocialController
             return $this->popupCallback(false, __('accounts.popup_callback.no_youtube_channels'), $this->platform->value);
         }
 
-        $channels = $this->filterConnectableIdentities($workspace, $channels, 'id');
+        $reconnect = $this->reconnectAccount($workspace);
+        $channels = $this->filterConnectableIdentities($workspace, $channels, 'id', $reconnect);
 
         if (empty($channels)) {
             session()->forget('youtube_oauth');
 
-            return $this->noConnectableIdentities($this->reconnectAccount($workspace), 'channel_not_found');
+            return $this->noConnectableIdentities($reconnect, 'channel_not_found');
         }
 
         return Inertia::render('accounts/YouTubeChannelSelect', [

@@ -109,29 +109,28 @@ class LinkedInController extends SocialController
 
         // The profile and the pages are one pool of LinkedIn identities, so they
         // go through the shared filter together and are split again for the view.
-        $connectable = collect($this->filterConnectableIdentities(
-            $workspace,
-            array_values(array_filter([
-                $this->personEnabled() ? $pending['person'] : null,
-                ...$pending['organizations'],
-            ])),
-            'id',
-        ));
+        $identities = array_values(array_filter([
+            $this->personEnabled() ? $pending['person'] : null,
+            ...$pending['organizations'],
+        ]));
 
-        if ($connectable->isEmpty()) {
+        $reconnect = $this->reconnectAccount($workspace);
+        $connectable = collect($this->filterConnectableIdentities($workspace, $identities, 'id', $reconnect));
+
+        // Only filtering counts as "nothing left to take". An empty pool means
+        // LinkedIn had nothing to offer, which the picker explains itself.
+        if ($identities !== [] && $connectable->isEmpty()) {
             session()->forget('linkedin_pending');
 
-            return $this->noConnectableIdentities($this->reconnectAccount($workspace), 'page_not_found');
+            return $this->noConnectableIdentities($reconnect, 'page_not_found');
         }
 
         $personId = (string) data_get($pending, 'person.id');
+        $isPerson = fn (array $identity): bool => (string) data_get($identity, 'id') === $personId;
 
         return Inertia::render('accounts/LinkedInSelect', [
-            'person' => $connectable->firstWhere('id', $personId),
-            'organizations' => $connectable
-                ->reject(fn (array $identity): bool => (string) data_get($identity, 'id') === $personId)
-                ->values()
-                ->all(),
+            'person' => $connectable->first($isPerson),
+            'organizations' => $connectable->reject($isPerson)->values()->all(),
         ]);
     }
 

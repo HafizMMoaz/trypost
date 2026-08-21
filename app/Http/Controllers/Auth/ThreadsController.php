@@ -138,8 +138,6 @@ class ThreadsController extends SocialController
                 $reconnect,
             );
 
-            session()->forget('threads_oauth_state');
-
             return $this->connectedCallback($reconnect);
         } catch (NetworkAlreadyConnectedException $e) {
             return $this->popupCallback(false, __("accounts.popup_callback.{$e->messageKey}"), $this->platform->value);
@@ -148,8 +146,6 @@ class ThreadsController extends SocialController
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
-
-            session()->forget('threads_oauth_state');
 
             return $this->popupCallback(false, __('accounts.popup_callback.error_connecting'), $this->platform->value);
         }

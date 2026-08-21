@@ -748,3 +748,27 @@ test('select-identity reports the network is taken when nothing is connectable',
 
     expect(session()->has('linkedin_pending'))->toBeFalse();
 });
+
+test('select-identity keeps the picker empty state when linkedin offers nothing', function () {
+    config()->set('trypost.platforms.linkedin.enabled', false);
+    config()->set('trypost.platforms.linkedin-page.enabled', true);
+
+    session(['linkedin_pending' => [
+        'workspace_id' => $this->workspace->id,
+        'token' => 'test-access-token',
+        'refresh_token' => 'test-refresh-token',
+        'expires_in' => 5184000,
+        'approved_scopes' => ['openid', 'profile', 'email', 'w_member_social'],
+        'person' => ['id' => 'person-123', 'name' => 'John Doe', 'avatar' => null, 'vanity_name' => 'johndoe'],
+        'organizations' => [],
+    ]]);
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.linkedin.select-identity'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('accounts/LinkedInSelect')
+            ->where('person', null)
+            ->has('organizations', 0)
+        );
+});
