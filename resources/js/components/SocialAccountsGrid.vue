@@ -20,7 +20,7 @@ import {
     TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { getInitials } from '@/composables/useInitials';
-import { useOAuthPopup } from '@/composables/useOAuthPopup';
+import { oauthConnectUrl, useOAuthPopup } from '@/composables/useOAuthPopup';
 import { getPlatformLogo } from '@/composables/usePlatformLogo';
 import { toggle as toggleAccount } from '@/routes/app/accounts';
 import {
@@ -76,6 +76,14 @@ const handleToggle = (accountId: string) => {
 };
 
 const { openOAuthPopup } = useOAuthPopup(() => router.reload());
+
+const openPlatformPopup = (platform: string) => {
+    const url = oauthConnectUrl(platform);
+
+    if (url) {
+        openOAuthPopup(url);
+    }
+};
 
 const gridClass = computed(() => {
     switch (props.columns) {
@@ -272,7 +280,7 @@ const isDisconnected = (account: SocialAccount | null): boolean => {
                                         variant="ghost"
                                         size="icon"
                                         class="size-8 text-amber-600 hover:text-amber-700"
-                                        @click="openOAuthPopup(platform.value)"
+                                        @click="openPlatformPopup(platform.value)"
                                     >
                                         <IconRefresh class="size-4" />
                                     </Button>
@@ -356,7 +364,7 @@ const isDisconnected = (account: SocialAccount | null): boolean => {
                     variant="outline"
                     class="w-full"
                     size="sm"
-                    @click="openOAuthPopup(platform.value)"
+                    @click="openPlatformPopup(platform.value)"
                 >
                     {{ trans('accounts.connect') }}
                 </Button>

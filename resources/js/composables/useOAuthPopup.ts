@@ -40,24 +40,28 @@ export interface SocialOAuthResult {
     platform: string | null;
 }
 
+export const oauthConnectUrl = (platform: string, reconnectId?: string): string | undefined => {
+    const route = CONNECT_ROUTES[platform];
+
+    if (!route) {
+        return undefined;
+    }
+
+    return route.url(reconnectId ? { query: { reconnect: reconnectId } } : undefined);
+};
+
 /**
- * Opens a platform's OAuth connect flow in a centered popup and invokes
- * `onResult` with the popup's `{success, message}` outcome. The listener is
- * wired to the calling component's lifecycle.
+ * Opens a connect URL in a centered popup and invokes `onResult` with the
+ * popup's `{success, message}` outcome. The listener is wired to the calling
+ * component's lifecycle.
  */
 export const useOAuthPopup = (onResult: (result: SocialOAuthResult) => void) => {
-    const openOAuthPopup = (platform: string, reconnectId?: string) => {
-        const route = CONNECT_ROUTES[platform];
-
-        if (!route) {
-            return;
-        }
-
+    const openOAuthPopup = (url: string) => {
         const left = window.screenX + (window.outerWidth - POPUP_WIDTH) / 2;
         const top = window.screenY + (window.outerHeight - POPUP_HEIGHT) / 2;
 
         const popup = window.open(
-            reconnectId ? route.url({ query: { reconnect: reconnectId } }) : route.url(),
+            url,
             'oauth-popup',
             `width=${POPUP_WIDTH},height=${POPUP_HEIGHT},left=${left},top=${top},scrollbars=yes,resizable=yes`,
         );

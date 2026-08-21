@@ -9,7 +9,7 @@ import InstagramConnectDialog from '@/components/accounts/InstagramConnectDialog
 import TelegramConnectDialog from '@/components/accounts/TelegramConnectDialog.vue';
 import ConfirmDeleteModal from '@/components/ConfirmDeleteModal.vue';
 import { Button } from '@/components/ui/button';
-import { useOAuthPopup } from '@/composables/useOAuthPopup';
+import { oauthConnectUrl, useOAuthPopup } from '@/composables/useOAuthPopup';
 import { disconnect } from '@/routes/app/accounts';
 import { Platform } from '@/types/platform';
 import {
@@ -150,6 +150,14 @@ const { openOAuthPopup } = useOAuthPopup((result) => {
     toast.error(result.message);
 });
 
+const openPlatformPopup = (platform: string, reconnectId?: string) => {
+    const url = oauthConnectUrl(platform, reconnectId);
+
+    if (url) {
+        openOAuthPopup(url);
+    }
+};
+
 const disconnectAccount = (account: ConnectedAccount) => {
     disconnectModal.value?.open({
         url: disconnect.url(account.id),
@@ -188,7 +196,7 @@ const openConnect = (platformValue: string) => {
         return;
     }
 
-    openOAuthPopup(platformValue);
+    openPlatformPopup(platformValue);
 };
 
 const reconnectAccount = (account: ConnectedAccount) => {
@@ -200,7 +208,7 @@ const reconnectAccount = (account: ConnectedAccount) => {
     }
 
     // Reconnect with the same OAuth method — skip the Instagram method picker.
-    openOAuthPopup(entry, account.id);
+    openPlatformPopup(entry, account.id);
 };
 
 const CardState = {
@@ -368,7 +376,7 @@ const cards = computed((): GridCard[] => {
         <InstagramConnectDialog
             v-model:open="instagramOpen"
             :methods="instagramMethods"
-            @select="openOAuthPopup"
+            @select="openPlatformPopup"
         />
 
         <ConfirmDeleteModal
