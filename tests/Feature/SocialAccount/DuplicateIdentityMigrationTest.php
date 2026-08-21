@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Enums\PostPlatform\Status as PostPlatformStatus;
 use App\Enums\SocialAccount\Platform;
 use App\Models\Post;
 use App\Models\PostPlatform;
@@ -79,6 +80,73 @@ test('it moves posts from the dropped duplicate onto the surviving account', fun
     $this->migration->up();
 
     expect($platform->fresh()->social_account_id)->toBe($newer->id);
+});
+
+test('it leaves a post with a single target when both duplicates were selected', function () {
+    $older = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Pinterest,
+        'platform_user_id' => 'pin-1',
+        'created_at' => now()->subDay(),
+    ]);
+
+    $newer = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Pinterest,
+        'platform_user_id' => 'pin-1',
+        'created_at' => now(),
+    ]);
+
+    $post = Post::factory()->create(['workspace_id' => $this->workspace->id]);
+
+    foreach ([$older, $newer] as $account) {
+        PostPlatform::factory()->create([
+            'post_id' => $post->id,
+            'social_account_id' => $account->id,
+            'platform' => Platform::Pinterest,
+        ]);
+    }
+
+    $this->migration->up();
+
+    expect(PostPlatform::where('post_id', $post->id)->count())->toBe(1)
+        ->and(PostPlatform::where('post_id', $post->id)->first()->social_account_id)->toBe($newer->id);
+});
+
+test('it keeps the published row when collapsing repeated post targets', function () {
+    $older = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Pinterest,
+        'platform_user_id' => 'pin-1',
+        'created_at' => now()->subDay(),
+    ]);
+
+    $newer = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Pinterest,
+        'platform_user_id' => 'pin-1',
+        'created_at' => now(),
+    ]);
+
+    $post = Post::factory()->create(['workspace_id' => $this->workspace->id]);
+
+    $published = PostPlatform::factory()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $older->id,
+        'platform' => Platform::Pinterest,
+        'status' => PostPlatformStatus::Published,
+    ]);
+
+    PostPlatform::factory()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $newer->id,
+        'platform' => Platform::Pinterest,
+        'status' => PostPlatformStatus::Pending,
+    ]);
+
+    $this->migration->up();
+
+    expect(PostPlatform::where('post_id', $post->id)->pluck('id')->all())->toBe([$published->id]);
 });
 
 test('it leaves distinct identities untouched', function () {

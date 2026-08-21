@@ -65,6 +65,37 @@ return new class extends Migration
                 ->update(['social_account_id' => $keepId]);
 
             DB::table('social_accounts')->whereIn('id', $ids)->delete();
+
+            $this->dropRepeatedPostTargets($keepId);
+        }
+    }
+
+    /**
+     * A post could hold one row per duplicate account. Once they all point at
+     * the surviving account the post would publish to it once per row, so keep
+     * the most meaningful row per post and drop the rest.
+     */
+    private function dropRepeatedPostTargets(string $keepId): void
+    {
+        $repeated = DB::table('post_platforms')
+            ->select('post_id')
+            ->where('social_account_id', $keepId)
+            ->groupBy('post_id')
+            ->havingRaw('count(*) > 1')
+            ->pluck('post_id');
+
+        foreach ($repeated as $postId) {
+            $ids = DB::table('post_platforms')
+                ->where('social_account_id', $keepId)
+                ->where('post_id', $postId)
+                ->orderByRaw("case when status = 'published' then 0 else 1 end")
+                ->orderByDesc('created_at')
+                ->pluck('id')
+                ->all();
+
+            array_shift($ids);
+
+            DB::table('post_platforms')->whereIn('id', $ids)->delete();
         }
     }
 };
