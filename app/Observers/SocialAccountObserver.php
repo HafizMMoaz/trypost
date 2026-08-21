@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Observers;
 
-use App\Enums\SocialAccount\Platform;
 use App\Enums\SocialAccount\Status;
 use App\Events\OnboardingStatusUpdated;
 use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
@@ -24,10 +23,6 @@ class SocialAccountObserver
      */
     public function creating(SocialAccount $socialAccount): void
     {
-        if (! $socialAccount->platform instanceof Platform) {
-            return;
-        }
-
         if (SocialAccount::occupiesNetwork((string) $socialAccount->workspace_id, $socialAccount->platform)) {
             throw new NetworkAlreadyConnectedException($socialAccount->platform);
         }

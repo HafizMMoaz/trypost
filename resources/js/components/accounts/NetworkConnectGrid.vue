@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { router, usePage } from '@inertiajs/vue3';
 import { IconAlertTriangle, IconCheck } from '@tabler/icons-vue';
-import { trans } from 'laravel-vue-i18n';
 import { computed, ref } from 'vue';
 import { toast } from 'vue-sonner';
 
@@ -10,6 +9,7 @@ import TelegramConnectDialog from '@/components/accounts/TelegramConnectDialog.v
 import ConfirmDeleteModal from '@/components/ConfirmDeleteModal.vue';
 import { Button } from '@/components/ui/button';
 import { oauthConnectUrl, useOAuthPopup } from '@/composables/useOAuthPopup';
+import { getPlatformTheme } from '@/composables/usePlatformLogo';
 import { disconnect } from '@/routes/app/accounts';
 import { Platform } from '@/types/platform';
 import {
@@ -49,96 +49,9 @@ const props = withDefaults(
     },
 );
 
-const allowMultipleSocialAccounts = computed(() =>
-    Boolean(usePage().props.allowMultipleSocialAccounts),
-);
-
-const getPlatformDescription = (platform: string): string =>
-    trans(`accounts.descriptions.${platform}`);
-
-// Mirrors `NetworksGrid.vue` from the marketing site — pastel tile bg
-// + ink 2px border + slight rotation per platform, real PNG logo inside.
-// `instagram-facebook` falls back to the base brand image and same color
-// since it's a variant of the same network.
-const platformTheme: Record<
-    string,
-    { bg: string; rotate: string; image: string }
-> = {
-    instagram: {
-        bg: 'bg-pink-200',
-        rotate: '-rotate-2',
-        image: '/images/accounts/instagram.png',
-    },
-    'instagram-facebook': {
-        bg: 'bg-pink-200',
-        rotate: '-rotate-2',
-        image: '/images/accounts/instagram.png',
-    },
-    facebook: {
-        bg: 'bg-sky-200',
-        rotate: 'rotate-1',
-        image: '/images/accounts/facebook.png',
-    },
-    linkedin: {
-        bg: 'bg-blue-200',
-        rotate: '-rotate-1',
-        image: '/images/accounts/linkedin.png',
-    },
-    x: {
-        bg: 'bg-amber-200',
-        rotate: 'rotate-2',
-        image: '/images/accounts/x.png',
-    },
-    tiktok: {
-        bg: 'bg-fuchsia-200',
-        rotate: '-rotate-1',
-        image: '/images/accounts/tiktok.png',
-    },
-    youtube: {
-        bg: 'bg-red-200',
-        rotate: 'rotate-1',
-        image: '/images/accounts/youtube.png',
-    },
-    pinterest: {
-        bg: 'bg-rose-200',
-        rotate: '-rotate-2',
-        image: '/images/accounts/pinterest.png',
-    },
-    threads: {
-        bg: 'bg-emerald-200',
-        rotate: 'rotate-2',
-        image: '/images/accounts/threads.png',
-    },
-    bluesky: {
-        bg: 'bg-cyan-200',
-        rotate: '-rotate-1',
-        image: '/images/accounts/bluesky.png',
-    },
-    mastodon: {
-        bg: 'bg-violet-200',
-        rotate: 'rotate-1',
-        image: '/images/accounts/mastodon.png',
-    },
-    telegram: {
-        bg: 'bg-sky-200',
-        rotate: '-rotate-2',
-        image: '/images/accounts/telegram.png',
-    },
-    discord: {
-        bg: 'bg-indigo-200',
-        rotate: 'rotate-1',
-        image: '/images/accounts/discord.png',
-    },
-};
-
-const themeFor = (value: string) =>
-    platformTheme[value] ?? { bg: 'bg-muted', rotate: '', image: '' };
-
 const telegramOpen = ref(false);
 const instagramOpen = ref(false);
-const disconnectModal = ref<InstanceType<typeof ConfirmDeleteModal> | null>(
-    null,
-);
+const disconnectModal = ref<InstanceType<typeof ConfirmDeleteModal> | null>(null);
 
 const { openOAuthPopup } = useOAuthPopup((result) => {
     if (result.success) {
@@ -150,8 +63,23 @@ const { openOAuthPopup } = useOAuthPopup((result) => {
     toast.error(result.message);
 });
 
-const openPlatformPopup = (platform: string, reconnectId?: string) => {
-    const url = oauthConnectUrl(platform, reconnectId);
+const connectEntry = (platform: string): string =>
+    platform === Platform.LinkedInPage ? Platform.LinkedIn : platform;
+
+const startConnect = (platform: string, reconnectId?: string) => {
+    const entry = connectEntry(platform);
+
+    if (entry === Platform.Telegram) {
+        telegramOpen.value = true;
+        return;
+    }
+
+    if (entry === Platform.Instagram && !reconnectId) {
+        instagramOpen.value = true;
+        return;
+    }
+
+    const url = oauthConnectUrl(entry, reconnectId);
 
     if (url) {
         openOAuthPopup(url);
@@ -165,103 +93,52 @@ const disconnectAccount = (account: ConnectedAccount) => {
     });
 };
 
-const needsReconnect = (account: ConnectedAccount): boolean =>
-    account.status === SocialAccountStatus.Disconnected ||
-    account.status === SocialAccountStatus.TokenExpired;
-
-const connectEntryFor = (platformValue: string): string =>
-    platformValue === Platform.LinkedInPage ? Platform.LinkedIn : platformValue;
-
-const instagramMethods = computed((): string[] => {
-    const instagram = props.platforms.find(
-        (platform) => platform.value === Platform.Instagram,
-    );
-
-    return (
-        instagram?.connect_methods ?? [
+const instagramMethods = computed(
+    () =>
+        props.platforms.find((platform) => platform.value === Platform.Instagram)?.connect_methods ?? [
             Platform.Instagram,
             Platform.InstagramFacebook,
-        ]
-    );
-});
+        ],
+);
 
-const openConnect = (platformValue: string) => {
-    if (platformValue === Platform.Telegram) {
-        telegramOpen.value = true;
-        return;
-    }
+const cards = computed(() => {
+    const allowMultiple = Boolean(usePage().props.allowMultipleSocialAccounts);
 
-    if (platformValue === Platform.Instagram) {
-        instagramOpen.value = true;
-        return;
-    }
+    return props.platforms.flatMap((platform) => {
+        const accounts = props.connectedAccounts.filter((account) => account.network === platform.network);
+        const theme = getPlatformTheme(platform.value);
+        const title = platform.label.split('(')[0].trim();
 
-    openPlatformPopup(platformValue);
-};
+        const connected = accounts.map((account) => {
+            const lost =
+                account.status === SocialAccountStatus.Disconnected ||
+                account.status === SocialAccountStatus.TokenExpired;
 
-const reconnectAccount = (account: ConnectedAccount) => {
-    const entry = connectEntryFor(account.platform);
-
-    if (entry === Platform.Telegram) {
-        telegramOpen.value = true;
-        return;
-    }
-
-    // Reconnect with the same OAuth method — skip the Instagram method picker.
-    openPlatformPopup(entry, account.id);
-};
-
-const CardState = {
-    Connect: 'connect',
-    Connected: 'connected',
-    Reconnect: 'reconnect',
-} as const;
-
-type CardStateValue = (typeof CardState)[keyof typeof CardState];
-
-interface GridCard {
-    key: string;
-    platform: AvailablePlatform;
-    account?: ConnectedAccount;
-    state: CardStateValue;
-    isAdditional: boolean;
-}
-
-// One card per connected account, plus a standing "connect" card per network:
-// always when nothing is connected yet, and additionally (when
-// allowMultipleSocialAccounts is on) alongside existing connections so
-// another identity can be added instead of the network staying locked at one.
-const cards = computed((): GridCard[] => {
-    const result: GridCard[] = [];
-
-    for (const platform of props.platforms) {
-        const accountsForNetwork = props.connectedAccounts.filter(
-            (account) => account.network === platform.network,
-        );
-
-        for (const account of accountsForNetwork) {
-            result.push({
+            return {
                 key: account.id,
                 platform,
                 account,
-                state: needsReconnect(account)
-                    ? CardState.Reconnect
-                    : CardState.Connected,
-                isAdditional: false,
-            });
-        }
+                theme,
+                title,
+                state: lost ? 'reconnect' : 'connected',
+                extra: false,
+            };
+        });
 
-        if (accountsForNetwork.length === 0 || allowMultipleSocialAccounts.value) {
-            result.push({
+        if (accounts.length === 0 || allowMultiple) {
+            connected.push({
                 key: `${platform.value}-connect`,
                 platform,
-                state: CardState.Connect,
-                isAdditional: accountsForNetwork.length > 0,
+                account: undefined,
+                theme,
+                title,
+                state: 'connect',
+                extra: accounts.length > 0,
             });
         }
-    }
 
-    return result;
+        return connected;
+    });
 });
 </script>
 
@@ -273,37 +150,44 @@ const cards = computed((): GridCard[] => {
                 :key="card.key"
                 :class="[
                     'group relative flex flex-col items-center gap-3 rounded-xl border-2 border-foreground p-4 text-center shadow-xs transition-shadow',
-                    card.state === CardState.Connected
+                    card.state === 'connected'
                         ? 'bg-emerald-50'
-                        : card.state === CardState.Reconnect
+                        : card.state === 'reconnect'
                           ? 'bg-amber-50'
                           : 'bg-card hover:shadow-md',
                 ]"
             >
                 <span
-                    v-if="card.state === CardState.Connected"
-                    class="absolute -top-2 -right-2 inline-flex size-6 items-center justify-center rounded-full border-2 border-foreground bg-emerald-200 text-emerald-700 shadow-2xs"
+                    v-if="card.state !== 'connect'"
+                    :class="[
+                        'absolute -top-2 -right-2 inline-flex size-6 items-center justify-center rounded-full border-2 border-foreground shadow-2xs',
+                        card.state === 'connected'
+                            ? 'bg-emerald-200 text-emerald-700'
+                            : 'bg-amber-200 text-amber-700',
+                    ]"
                     aria-hidden="true"
                 >
-                    <IconCheck class="size-3.5" stroke-width="3" />
-                </span>
-                <span
-                    v-else-if="card.state === CardState.Reconnect"
-                    class="absolute -top-2 -right-2 inline-flex size-6 items-center justify-center rounded-full border-2 border-foreground bg-amber-200 text-amber-700 shadow-2xs"
-                    aria-hidden="true"
-                >
-                    <IconAlertTriangle class="size-3.5" stroke-width="2.5" />
+                    <IconCheck
+                        v-if="card.state === 'connected'"
+                        class="size-3.5"
+                        stroke-width="3"
+                    />
+                    <IconAlertTriangle
+                        v-else
+                        class="size-3.5"
+                        stroke-width="2.5"
+                    />
                 </span>
 
                 <div
                     :class="[
-                        themeFor(card.platform.value).bg,
-                        themeFor(card.platform.value).rotate,
+                        card.theme.bg,
+                        card.theme.rotate,
                         'inline-flex size-16 items-center justify-center rounded-2xl border-2 border-foreground shadow-sm transition-transform group-hover:!rotate-0',
                     ]"
                 >
                     <img
-                        :src="themeFor(card.platform.value).image"
+                        :src="card.theme.image"
                         :alt="card.platform.label"
                         class="size-9 rounded-lg"
                         loading="lazy"
@@ -311,22 +195,17 @@ const cards = computed((): GridCard[] => {
                 </div>
 
                 <div class="w-full min-w-0 flex-1">
-                    <span
-                        class="block truncate text-sm font-semibold text-foreground"
-                    >
-                        <template v-if="card.platform.label.includes('(')">
-                            {{ card.platform.label.split('(')[0].trim() }}
-                        </template>
-                        <template v-else>{{ card.platform.label }}</template>
+                    <span class="block truncate text-sm font-semibold text-foreground">
+                        {{ card.title }}
                     </span>
                     <p
-                        v-if="card.state === CardState.Connect"
+                        v-if="card.state === 'connect'"
                         class="mt-0.5 line-clamp-2 text-xs leading-tight text-foreground/60"
                     >
-                        {{ getPlatformDescription(card.platform.value) }}
+                        {{ $t(`accounts.descriptions.${card.platform.value}`) }}
                     </p>
                     <p
-                        v-else-if="card.state === CardState.Reconnect"
+                        v-else-if="card.state === 'reconnect'"
                         class="mt-0.5 truncate text-xs leading-tight font-medium text-amber-700"
                     >
                         {{ $t('accounts.connection_lost') }}
@@ -340,19 +219,19 @@ const cards = computed((): GridCard[] => {
                 </div>
 
                 <Button
-                    v-if="card.state === CardState.Reconnect"
+                    v-if="card.state === 'reconnect' && card.account"
                     size="sm"
                     class="mt-auto w-full"
-                    @click="reconnectAccount(card.account!)"
+                    @click="startConnect(card.account.platform, card.account.id)"
                 >
                     {{ $t('accounts.reconnect') }}
                 </Button>
                 <Button
-                    v-else-if="card.state === CardState.Connected"
+                    v-else-if="card.state === 'connected' && card.account"
                     variant="destructive"
                     size="sm"
                     class="mt-auto w-full"
-                    @click="disconnectAccount(card.account!)"
+                    @click="disconnectAccount(card.account)"
                 >
                     {{ $t('accounts.disconnect') }}
                 </Button>
@@ -360,10 +239,10 @@ const cards = computed((): GridCard[] => {
                     v-else
                     size="sm"
                     class="mt-auto w-full"
-                    @click="openConnect(card.platform.value)"
+                    @click="startConnect(card.platform.value)"
                 >
                     {{
-                        card.isAdditional
+                        card.extra
                             ? $t('accounts.connect_another')
                             : $t('accounts.connect_cta')
                     }}
@@ -376,7 +255,7 @@ const cards = computed((): GridCard[] => {
         <InstagramConnectDialog
             v-model:open="instagramOpen"
             :methods="instagramMethods"
-            @select="openPlatformPopup"
+            @select="startConnect"
         />
 
         <ConfirmDeleteModal
