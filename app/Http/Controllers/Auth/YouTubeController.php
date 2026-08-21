@@ -6,7 +6,6 @@ namespace App\Http\Controllers\Auth;
 
 use App\Enums\SocialAccount\Platform as SocialPlatform;
 use App\Enums\SocialAccount\Status;
-use App\Exceptions\SocialAccount\ConnectPopupException;
 use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
 use App\Models\SocialAccount;
 use Illuminate\Http\RedirectResponse;
@@ -65,49 +64,42 @@ class YouTubeController extends SocialController
                 return $this->noConnectableIdentities($reconnect, 'channel_not_found');
             }
 
-            // If only one channel, connect directly (most common case)
-            if (count($channels) === 1) {
-                $channel = $channels[0];
-                $avatarPath = uploadFromUrl(data_get($channel, 'thumbnail'));
-
-                SocialAccount::connectIdentity(
-                    $workspace,
-                    $this->platform,
-                    (string) data_get($channel, 'id'),
-                    [
-                        'username' => ltrim(data_get($channel, 'custom_url', data_get($channel, 'id')), '@'),
-                        'display_name' => data_get($channel, 'title'),
-                        'avatar_url' => $avatarPath,
-                        'access_token' => $socialUser->token,
-                        'refresh_token' => $socialUser->refreshToken,
-                        'token_expires_at' => $socialUser->expiresIn ? now()->addSeconds($socialUser->expiresIn) : null,
-                        'scopes' => $this->scopes,
-                        'status' => Status::Connected,
-                        'error_message' => null,
-                        'disconnected_at' => null,
-                        'meta' => [
-                            'channel_id' => data_get($channel, 'id'),
-                            'google_user_id' => $socialUser->getId(),
-                        ],
-                    ],
-                    $reconnect,
-                );
-
-                return $this->connectedCallback($reconnect);
+            // Google's own delegation screen already made the user pick which
+            // channel this authorization is for, so channels?mine=true answers
+            // with that one. More than one only arrives if that ever changes.
+            if (count($channels) > 1) {
+                Log::warning('YouTube returned more than one channel for a delegated token', [
+                    'channel_ids' => array_column($channels, 'id'),
+                ]);
             }
 
-            // Multiple channels - store data and show selection screen
-            session([
-                'youtube_oauth' => [
+            $channel = $channels[0];
+            $avatarPath = uploadFromUrl(data_get($channel, 'thumbnail'));
+
+            SocialAccount::connectIdentity(
+                $workspace,
+                $this->platform,
+                (string) data_get($channel, 'id'),
+                [
+                    'username' => ltrim(data_get($channel, 'custom_url', data_get($channel, 'id')), '@'),
+                    'display_name' => data_get($channel, 'title'),
+                    'avatar_url' => $avatarPath,
                     'access_token' => $socialUser->token,
                     'refresh_token' => $socialUser->refreshToken,
-                    'expires_in' => $socialUser->expiresIn,
-                    'user_id' => $socialUser->getId(),
-                    'reconnect_id' => $reconnect?->id,
+                    'token_expires_at' => $socialUser->expiresIn ? now()->addSeconds($socialUser->expiresIn) : null,
+                    'scopes' => $this->scopes,
+                    'status' => Status::Connected,
+                    'error_message' => null,
+                    'disconnected_at' => null,
+                    'meta' => [
+                        'channel_id' => data_get($channel, 'id'),
+                        'google_user_id' => $socialUser->getId(),
+                    ],
                 ],
-            ]);
+                $reconnect,
+            );
 
-            return redirect()->route('app.social.youtube.select-channel');
+            return $this->connectedCallback($reconnect);
         } catch (NetworkAlreadyConnectedException $e) {
             return $this->popupCallback(false, __("accounts.popup_callback.{$e->messageKey}"), $this->platform->value);
         } catch (\Exception $e) {
@@ -117,111 +109,6 @@ class YouTubeController extends SocialController
             ]);
 
             return $this->popupCallback(false, __('accounts.popup_callback.error_connecting'), $this->platform->value);
-        }
-    }
-
-    public function selectChannel(Request $request): InertiaResponse
-    {
-        $oauthData = session('youtube_oauth');
-
-        if (! $oauthData) {
-            throw new ConnectPopupException('session_expired', $this->platform);
-        }
-
-        $workspace = $this->connectWorkspace($request);
-
-        $channels = $this->fetchChannels(data_get($oauthData, 'access_token'));
-
-        if (empty($channels)) {
-            $this->forgetSocialConnectSession();
-            session()->forget('youtube_oauth');
-
-            return $this->popupCallback(false, __('accounts.popup_callback.no_youtube_channels'), $this->platform->value);
-        }
-
-        $reconnect = $this->reconnectAccount($workspace);
-        $channels = $this->filterConnectableIdentities($workspace, $channels, 'id', $reconnect);
-
-        if (empty($channels)) {
-            session()->forget('youtube_oauth');
-
-            return $this->noConnectableIdentities($reconnect, 'channel_not_found');
-        }
-
-        // Unlike the Facebook and Instagram pickers, a deferred re-GET of this
-        // route hits the Google API again, and fetchChannels() turns any
-        // failure into an empty list that clears the connect session.
-        return Inertia::render('accounts/YouTubeChannelSelect', [
-            'workspace' => $workspace,
-            'channels' => $channels,
-            'onboardingProgress' => false,
-        ]);
-    }
-
-    public function select(Request $request): InertiaResponse
-    {
-        $request->validate([
-            'channel_id' => 'required|string',
-        ]);
-
-        $oauthData = session('youtube_oauth');
-
-        if (! $oauthData) {
-            throw new ConnectPopupException('session_expired', $this->platform);
-        }
-
-        $workspace = $this->connectWorkspace($request);
-
-        try {
-            $reconnect = $this->reconnectAccount($workspace, data_get($oauthData, 'reconnect_id'));
-            $channels = $this->filterConnectableIdentities(
-                $workspace,
-                $this->fetchChannels(data_get($oauthData, 'access_token')),
-                'id',
-                $reconnect,
-            );
-            $selectedChannel = collect($channels)->firstWhere('id', $request->channel_id);
-
-            if (! $selectedChannel) {
-                return $this->popupCallback(false, __('accounts.popup_callback.channel_not_found'), $this->platform->value);
-            }
-
-            $avatarPath = uploadFromUrl(data_get($selectedChannel, 'thumbnail'));
-
-            SocialAccount::connectIdentity(
-                $workspace,
-                $this->platform,
-                (string) data_get($selectedChannel, 'id'),
-                [
-                    'username' => ltrim(data_get($selectedChannel, 'custom_url', data_get($selectedChannel, 'id')), '@'),
-                    'display_name' => data_get($selectedChannel, 'title'),
-                    'avatar_url' => $avatarPath,
-                    'access_token' => data_get($oauthData, 'access_token'),
-                    'refresh_token' => data_get($oauthData, 'refresh_token'),
-                    'token_expires_at' => data_get($oauthData, 'expires_in') ? now()->addSeconds(data_get($oauthData, 'expires_in')) : null,
-                    'scopes' => $this->scopes,
-                    'status' => Status::Connected,
-                    'error_message' => null,
-                    'disconnected_at' => null,
-                    'meta' => [
-                        'channel_id' => data_get($selectedChannel, 'id'),
-                        'google_user_id' => data_get($oauthData, 'user_id'),
-                    ],
-                ],
-                $reconnect,
-            );
-
-            session()->forget('youtube_oauth');
-
-            return $this->connectedCallback($reconnect);
-        } catch (NetworkAlreadyConnectedException $e) {
-            return $this->popupCallback(false, __("accounts.popup_callback.{$e->messageKey}"), $this->platform->value);
-        } catch (\Exception $e) {
-            Log::error('YouTube channel selection error', [
-                'error' => $e->getMessage(),
-            ]);
-
-            return $this->popupCallback(false, __('accounts.popup_callback.error_connecting_channel'), $this->platform->value);
         }
     }
 
