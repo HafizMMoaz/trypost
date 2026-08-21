@@ -198,7 +198,13 @@ class YouTubeController extends SocialController
         }
 
         try {
-            $channels = $this->fetchChannels(data_get($oauthData, 'access_token'));
+            $reconnect = $this->reconnectAccount($workspace, data_get($oauthData, 'reconnect_id'));
+            $channels = $this->filterConnectableIdentities(
+                $workspace,
+                $this->fetchChannels(data_get($oauthData, 'access_token')),
+                'id',
+                $reconnect,
+            );
             $selectedChannel = collect($channels)->firstWhere('id', $request->channel_id);
 
             if (! $selectedChannel) {
@@ -206,7 +212,6 @@ class YouTubeController extends SocialController
             }
 
             $avatarPath = uploadFromUrl(data_get($selectedChannel, 'thumbnail'));
-            $reconnect = $this->reconnectAccount($workspace, data_get($oauthData, 'reconnect_id'));
 
             SocialAccount::connectIdentity(
                 $workspace,

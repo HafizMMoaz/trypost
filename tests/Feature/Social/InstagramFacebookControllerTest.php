@@ -469,3 +469,50 @@ test('instagram-facebook select shows network_taken when a standalone instagram 
 
     expect($this->workspace->socialAccounts()->whereIn('platform', [Platform::Instagram->value, Platform::InstagramFacebook->value])->count())->toBe(1);
 });
+
+test('instagram-facebook callback hides an instagram already connected standalone in multi-account mode', function () {
+    config()->set('trypost.allow_multiple_social_accounts', true);
+
+    SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Instagram,
+        'platform_user_id' => 'shared-ig',
+    ]);
+
+    session(['social_connect_workspace' => $this->workspace->id]);
+
+    $socialiteUser = Mockery::mock(SocialiteUser::class);
+    $socialiteUser->token = 'test-user-token';
+
+    Socialite::shouldReceive('driver')
+        ->with('facebook')
+        ->andReturn(Mockery::mock(['user' => $socialiteUser]));
+
+    Http::fake([
+        'https://graph.facebook.com/*/me/accounts*' => Http::response([
+            'data' => [
+                [
+                    'id' => 'page-1',
+                    'name' => 'Shared Page',
+                    'access_token' => 'page-token',
+                    'instagram_business_account' => ['id' => 'shared-ig'],
+                ],
+            ],
+        ], 200),
+        'https://graph.facebook.com/*' => Http::response([
+            'id' => 'shared-ig',
+            'username' => 'shared',
+            'name' => 'Shared',
+        ], 200),
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.instagram-facebook.callback'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
+
+    expect($this->workspace->socialAccounts()
+        ->where('platform', Platform::InstagramFacebook->value)
+        ->exists())->toBeFalse()
+        ->and($this->workspace->socialAccounts()->count())->toBe(1);
+});

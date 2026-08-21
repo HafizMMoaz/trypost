@@ -127,19 +127,27 @@ class SocialController extends Controller
     }
 
     /**
+     * Narrow the identities a provider returned to the ones this card may take.
+     *
+     * A reconnect only ever offers its own identity. Otherwise every identity
+     * already connected on this network is dropped — including in multi-account
+     * mode, where the same identity could otherwise be connected twice under two
+     * platforms of one network (Instagram directly and via Facebook).
+     *
      * @param  array<int, array<string, mixed>>  $identities
      * @return array<int, array<string, mixed>>
      */
-    protected function filterConnectableIdentities(Workspace $workspace, array $identities, string $idKey): array
-    {
+    protected function filterConnectableIdentities(
+        Workspace $workspace,
+        array $identities,
+        string $idKey,
+        ?SocialAccount $reconnect = null,
+    ): array {
         $byId = collect($identities)->keyBy(fn (array $identity) => (string) data_get($identity, $idKey));
+        $reconnect ??= $this->reconnectAccount($workspace);
 
-        if ($reconnect = $this->reconnectAccount($workspace)) {
+        if ($reconnect) {
             return $byId->only([(string) $reconnect->platform_user_id])->values()->all();
-        }
-
-        if (config('trypost.allow_multiple_social_accounts')) {
-            return $identities;
         }
 
         return $byId->except(
