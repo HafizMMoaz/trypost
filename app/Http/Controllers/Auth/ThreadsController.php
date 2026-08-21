@@ -6,9 +6,9 @@ namespace App\Http\Controllers\Auth;
 
 use App\Enums\SocialAccount\Platform as SocialPlatform;
 use App\Enums\SocialAccount\Status;
+use App\Exceptions\SocialAccount\ConnectPopupException;
 use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
 use App\Models\SocialAccount;
-use App\Models\Workspace;
 use App\Services\Social\TokenRedactor;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -53,27 +53,12 @@ class ThreadsController extends SocialController
 
     public function callback(Request $request): InertiaResponse
     {
-        $workspaceId = session('social_connect_workspace');
         $savedState = session('threads_oauth_state');
-
-        if (! $workspaceId) {
-            session()->forget(['threads_oauth_state', 'social_reconnect_id']);
-
-            return $this->popupCallback(false, __('accounts.popup_callback.session_expired'), $this->platform->value);
-        }
+        $workspace = $this->connectWorkspace($request);
+        session()->forget('threads_oauth_state');
 
         if ($request->state !== $savedState) {
-            session()->forget(['threads_oauth_state', 'social_reconnect_id']);
-
-            return $this->popupCallback(false, __('accounts.popup_callback.invalid_state'), $this->platform->value);
-        }
-
-        $workspace = Workspace::find($workspaceId);
-
-        if (! $workspace || ! $request->user()->can('manageAccounts', $workspace)) {
-            session()->forget(['threads_oauth_state', 'social_reconnect_id']);
-
-            return $this->popupCallback(false, __('accounts.popup_callback.workspace_not_found'), $this->platform->value);
+            throw new ConnectPopupException('invalid_state', $this->platform);
         }
 
         try {
@@ -155,9 +140,7 @@ class ThreadsController extends SocialController
 
             session()->forget(['threads_oauth_state', 'social_reconnect_id']);
 
-            return $this->popupCallback(true, $reconnect
-                ? __('accounts.popup_callback.reconnected')
-                : __('accounts.popup_callback.connected'), $this->platform->value);
+            return $this->connectedCallback($reconnect);
         } catch (NetworkAlreadyConnectedException) {
             return $this->popupCallback(false, __('accounts.popup_callback.network_taken'), $this->platform->value);
         } catch (\Exception $e) {

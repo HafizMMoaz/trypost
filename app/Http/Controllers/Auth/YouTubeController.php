@@ -6,9 +6,9 @@ namespace App\Http\Controllers\Auth;
 
 use App\Enums\SocialAccount\Platform as SocialPlatform;
 use App\Enums\SocialAccount\Status;
+use App\Exceptions\SocialAccount\ConnectPopupException;
 use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
 use App\Models\SocialAccount;
-use App\Models\Workspace;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -46,17 +46,9 @@ class YouTubeController extends SocialController
 
     public function callback(Request $request): InertiaResponse|RedirectResponse
     {
-        $workspaceId = session('social_connect_workspace');
+        $workspace = $this->connectWorkspace($request);
 
-        if (! $workspaceId) {
-            return $this->popupCallback(false, __('accounts.popup_callback.session_expired'), $this->platform->value);
-        }
-
-        $workspace = Workspace::find($workspaceId);
-
-        if (! $workspace || ! $request->user()->can('manageAccounts', $workspace)) {
-            return $this->popupCallback(false, __('accounts.popup_callback.workspace_not_found'), $this->platform->value);
-        }
+        $reconnect = $this->reconnectAccount($workspace);
 
         try {
             $socialUser = Socialite::driver($this->driver)->user();
@@ -67,21 +59,16 @@ class YouTubeController extends SocialController
                 return $this->popupCallback(false, __('accounts.popup_callback.no_youtube_channels'), $this->platform->value);
             }
 
-            $channels = $this->filterConnectableIdentities($workspace, $channels, 'id');
+            $channels = $this->filterConnectableIdentities($workspace, $channels, 'id', $reconnect);
 
             if (empty($channels)) {
-                if ($this->reconnectAccount($workspace)) {
-                    return $this->popupCallback(false, __('accounts.popup_callback.channel_not_found'), $this->platform->value);
-                }
-
-                return $this->popupCallback(false, __('accounts.popup_callback.network_taken'), $this->platform->value);
+                return $this->noConnectableIdentities($reconnect, 'channel_not_found');
             }
 
             // If only one channel, connect directly (most common case)
             if (count($channels) === 1) {
                 $channel = $channels[0];
                 $avatarPath = uploadFromUrl(data_get($channel, 'thumbnail'));
-                $reconnect = $this->reconnectAccount($workspace);
 
                 SocialAccount::connectIdentity(
                     $workspace,
@@ -106,9 +93,7 @@ class YouTubeController extends SocialController
                     $reconnect,
                 );
 
-                return $this->popupCallback(true, $reconnect
-                    ? __('accounts.popup_callback.reconnected')
-                    : __('accounts.popup_callback.connected'), $this->platform->value);
+                return $this->connectedCallback($reconnect);
             }
 
             // Multiple channels - store data and show selection screen
@@ -118,7 +103,7 @@ class YouTubeController extends SocialController
                     'refresh_token' => $socialUser->refreshToken,
                     'expires_in' => $socialUser->expiresIn,
                     'user_id' => $socialUser->getId(),
-                    'reconnect_id' => $this->reconnectAccount($workspace)?->id,
+                    'reconnect_id' => $reconnect?->id,
                 ],
             ]);
 
@@ -138,17 +123,12 @@ class YouTubeController extends SocialController
     public function selectChannel(Request $request): InertiaResponse
     {
         $oauthData = session('youtube_oauth');
-        $workspaceId = session('social_connect_workspace');
 
-        if (! $oauthData || ! $workspaceId) {
-            return $this->popupCallback(false, __('accounts.popup_callback.session_expired'), $this->platform->value);
+        if (! $oauthData) {
+            throw new ConnectPopupException('session_expired', $this->platform);
         }
 
-        $workspace = Workspace::find($workspaceId);
-
-        if (! $workspace) {
-            return $this->popupCallback(false, __('accounts.popup_callback.workspace_not_found'), $this->platform->value);
-        }
+        $workspace = $this->connectWorkspace($request);
 
         $channels = $this->fetchChannels(data_get($oauthData, 'access_token'));
 
@@ -162,14 +142,9 @@ class YouTubeController extends SocialController
         $channels = $this->filterConnectableIdentities($workspace, $channels, 'id');
 
         if (empty($channels)) {
-            $message = $this->reconnectAccount($workspace)
-                ? __('accounts.popup_callback.channel_not_found')
-                : __('accounts.popup_callback.network_taken');
-
-            $this->forgetSocialConnectSession();
             session()->forget('youtube_oauth');
 
-            return $this->popupCallback(false, $message, $this->platform->value);
+            return $this->noConnectableIdentities($this->reconnectAccount($workspace), 'channel_not_found');
         }
 
         return Inertia::render('accounts/YouTubeChannelSelect', [
@@ -185,17 +160,12 @@ class YouTubeController extends SocialController
         ]);
 
         $oauthData = session('youtube_oauth');
-        $workspaceId = session('social_connect_workspace');
 
-        if (! $oauthData || ! $workspaceId) {
-            return $this->popupCallback(false, __('accounts.popup_callback.session_expired'), $this->platform->value);
+        if (! $oauthData) {
+            throw new ConnectPopupException('session_expired', $this->platform);
         }
 
-        $workspace = Workspace::find($workspaceId);
-
-        if (! $workspace || ! $request->user()->can('manageAccounts', $workspace)) {
-            return $this->popupCallback(false, __('accounts.popup_callback.workspace_not_found'), $this->platform->value);
-        }
+        $workspace = $this->connectWorkspace($request);
 
         try {
             $reconnect = $this->reconnectAccount($workspace, data_get($oauthData, 'reconnect_id'));
@@ -238,9 +208,7 @@ class YouTubeController extends SocialController
 
             session()->forget(['youtube_oauth', 'social_reconnect_id']);
 
-            return $this->popupCallback(true, $reconnect
-                ? __('accounts.popup_callback.reconnected')
-                : __('accounts.popup_callback.connected'), $this->platform->value);
+            return $this->connectedCallback($reconnect);
         } catch (NetworkAlreadyConnectedException) {
             return $this->popupCallback(false, __('accounts.popup_callback.network_taken'), $this->platform->value);
         } catch (\Exception $e) {

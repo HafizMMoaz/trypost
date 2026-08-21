@@ -8,6 +8,7 @@ use App\Actions\SocialAccount\ToggleSocialAccount;
 use App\Enums\PostPlatform\Status as PostPlatformStatus;
 use App\Enums\SocialAccount\Platform as SocialPlatform;
 use App\Enums\SocialAccount\Status;
+use App\Exceptions\SocialAccount\ConnectPopupException;
 use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\App\SocialAccountResource;
@@ -91,6 +92,30 @@ class SocialController extends Controller
         return back();
     }
 
+    /**
+     * The workspace the connect popup was opened for.
+     *
+     * @throws ConnectPopupException when the session is gone or the user may no
+     *                               longer manage the workspace's accounts.
+     */
+    protected function connectWorkspace(Request $request, ?SocialPlatform $platform = null): Workspace
+    {
+        $platform ??= $this->platform;
+        $workspaceId = session('social_connect_workspace');
+
+        if (! $workspaceId) {
+            throw new ConnectPopupException('session_expired', $platform);
+        }
+
+        $workspace = Workspace::find($workspaceId);
+
+        if (! $workspace || ! $request->user()->can('manageAccounts', $workspace)) {
+            throw new ConnectPopupException('workspace_not_found', $platform);
+        }
+
+        return $workspace;
+    }
+
     protected function rememberConnectSession(Request $request, Workspace $workspace): void
     {
         session([
@@ -99,18 +124,13 @@ class SocialController extends Controller
         ]);
     }
 
+    /**
+     * The empty-string default keeps a missing query param from falling through
+     * to the session, which would let one network's reconnect leak into another.
+     */
     protected function validatedReconnectId(Request $request, Workspace $workspace): ?string
     {
-        $reconnectId = $request->query('reconnect');
-
-        if (! is_string($reconnectId) || $reconnectId === '') {
-            return null;
-        }
-
-        return $workspace->socialAccounts()
-            ->whereIn('platform', $this->platform->networkPlatformValues())
-            ->find($reconnectId)
-            ?->id;
+        return $this->reconnectAccount($workspace, $request->query('reconnect', ''))?->id;
     }
 
     protected function reconnectAccount(Workspace $workspace, mixed $reconnectId = null): ?SocialAccount
@@ -124,6 +144,19 @@ class SocialController extends Controller
         return $workspace->socialAccounts()
             ->whereIn('platform', $this->platform->networkPlatformValues())
             ->find($reconnectId);
+    }
+
+    /**
+     * Nothing on this network is left to connect: either the card being
+     * reconnected is gone from the provider, or the single slot is taken.
+     */
+    protected function noConnectableIdentities(?SocialAccount $reconnect, string $missingKey): Response
+    {
+        return $this->popupCallback(
+            false,
+            __($reconnect ? "accounts.popup_callback.{$missingKey}" : 'accounts.popup_callback.network_taken'),
+            $this->platform->value,
+        );
     }
 
     /**
@@ -177,17 +210,7 @@ class SocialController extends Controller
         SocialPlatform $platform,
         string $driver
     ): Response {
-        $workspaceId = session('social_connect_workspace');
-
-        if (! $workspaceId) {
-            return $this->popupCallback(false, __('accounts.popup_callback.session_expired'), $platform->value);
-        }
-
-        $workspace = Workspace::find($workspaceId);
-
-        if (! $workspace || ! $request->user()->can('manageAccounts', $workspace)) {
-            return $this->popupCallback(false, __('accounts.popup_callback.workspace_not_found'), $platform->value);
-        }
+        $workspace = $this->connectWorkspace($request, $platform);
 
         try {
             $socialUser = Socialite::driver($driver)->user();
@@ -214,9 +237,7 @@ class SocialController extends Controller
                 $reconnect,
             );
 
-            return $this->popupCallback(true, $reconnect
-                ? __('accounts.popup_callback.reconnected')
-                : __('accounts.popup_callback.connected'), $platform->value);
+            return $this->connectedCallback($reconnect, $platform);
         } catch (NetworkAlreadyConnectedException) {
             return $this->popupCallback(false, __('accounts.popup_callback.network_taken'), $platform->value);
         } catch (\Exception $e) {
@@ -227,6 +248,17 @@ class SocialController extends Controller
 
             return $this->popupCallback(false, __('accounts.popup_callback.error_connecting'), $platform->value);
         }
+    }
+
+    /**
+     * Close the popup on a successful connect, wording it as a reconnect when
+     * the flow updated an existing card.
+     */
+    protected function connectedCallback(?SocialAccount $reconnect, ?SocialPlatform $platform = null): Response
+    {
+        return $this->popupCallback(true, $reconnect
+            ? __('accounts.popup_callback.reconnected')
+            : __('accounts.popup_callback.connected'), ($platform ?? $this->platform)->value);
     }
 
     protected function forgetSocialConnectSession(): void

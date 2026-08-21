@@ -20,7 +20,6 @@ import {
 export interface AvailablePlatform {
     value: string;
     label: string;
-    color: string;
     network: string;
     connect_methods?: string[];
 }

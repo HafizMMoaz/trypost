@@ -817,3 +817,27 @@ test('facebook select ignores a stored reconnect id from another network', funct
     expect($linkedin->fresh()->platform)->toBe(Platform::LinkedIn)
         ->and($this->workspace->socialAccounts()->where('platform', Platform::Facebook)->count())->toBe(1);
 });
+
+test('facebook page picker refuses a user who can no longer manage accounts', function () {
+    $outsider = User::factory()->create();
+
+    session([
+        'social_connect_workspace' => $this->workspace->id,
+        'facebook_oauth' => [
+            'user_token' => 'user-token',
+            'user_id' => 'fb-user',
+            'pages' => [
+                ['id' => 'page-1', 'name' => 'My Page', 'access_token' => 'page-token'],
+            ],
+        ],
+    ]);
+
+    $this->actingAs($outsider)
+        ->get(route('app.social.facebook.select-page'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('accounts/PopupCallback')
+            ->where('success', false)
+            ->where('message', __('accounts.popup_callback.workspace_not_found'))
+        );
+});

@@ -59,17 +59,7 @@ class LinkedInController extends SocialController
 
     public function callback(Request $request): InertiaResponse|RedirectResponse
     {
-        $workspaceId = session('social_connect_workspace');
-
-        if (! $workspaceId) {
-            return $this->popupCallback(false, __('accounts.popup_callback.session_expired'), $this->platform->value);
-        }
-
-        $workspace = Workspace::find($workspaceId);
-
-        if (! $workspace || ! $request->user()->can('manageAccounts', $workspace)) {
-            return $this->popupCallback(false, __('accounts.popup_callback.workspace_not_found'), $this->platform->value);
-        }
+        $workspace = $this->connectWorkspace($request);
 
         try {
             $socialUser = Socialite::driver($this->driver)->user();
@@ -195,9 +185,7 @@ class LinkedInController extends SocialController
 
             session()->forget('linkedin_pending');
 
-            return $this->popupCallback(true, $this->reconnectAccount($workspace)
-                ? __('accounts.popup_callback.reconnected')
-                : __('accounts.popup_callback.connected'), $this->platform->value);
+            return $this->connectedCallback($reconnect);
         } catch (NetworkAlreadyConnectedException) {
             return $this->popupCallback(false, __('accounts.popup_callback.network_taken'), $this->platform->value);
         } catch (\Exception $e) {

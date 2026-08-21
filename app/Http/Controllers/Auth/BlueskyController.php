@@ -108,9 +108,7 @@ class BlueskyController extends SocialController
                 $reconnect,
             );
 
-            return $this->popupCallback(true, $reconnect
-                ? __('accounts.popup_callback.reconnected')
-                : __('accounts.popup_callback.connected'), $this->platform->value);
+            return $this->connectedCallback($reconnect);
         } catch (ValidationException $e) {
             throw $e;
         } catch (NetworkAlreadyConnectedException) {
