@@ -8,6 +8,7 @@ use App\Enums\SocialAccount\Platform;
 use App\Enums\SocialAccount\Status;
 use App\Events\OnboardingStatusUpdated;
 use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
+use App\Jobs\PostHog\IdentifyConnectedPlatforms;
 use App\Jobs\PostHog\SyncAccountUsage;
 use App\Models\SocialAccount;
 use App\Services\PostHogService;
@@ -57,6 +58,7 @@ class SocialAccountObserver
         $isConnected = $socialAccount->status === Status::Connected;
 
         if ($wasConnected !== $isConnected) {
+            $this->identifyConnectedPlatforms($socialAccount);
             $this->notifyOnboarding($socialAccount);
         }
     }
@@ -64,10 +66,20 @@ class SocialAccountObserver
     private function syncUsageAndOnboarding(SocialAccount $socialAccount): void
     {
         $this->syncUsage($socialAccount);
+        $this->identifyConnectedPlatforms($socialAccount);
 
         if ($socialAccount->status === Status::Connected) {
             $this->notifyOnboarding($socialAccount);
         }
+    }
+
+    private function identifyConnectedPlatforms(SocialAccount $socialAccount): void
+    {
+        if (! PostHogService::isEnabled()) {
+            return;
+        }
+
+        IdentifyConnectedPlatforms::dispatch((string) $socialAccount->workspace_id);
     }
 
     /**
