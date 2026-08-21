@@ -76,6 +76,8 @@ useWorkspaceEcho<{ nonce: string }>(
     },
 );
 
+const KNOWN_CONNECT_ERRORS = ['network_taken', 'wrong_chat'];
+
 useWorkspaceEcho<{ nonce: string; reason: string }>(
     '.telegram.connect.failed',
     (payload) => {
@@ -85,10 +87,11 @@ useWorkspaceEcho<{ nonce: string; reason: string }>(
 
         phase.value = 'error';
         clearExpiry();
-        errorMessage.value =
-            payload.reason === 'network_taken'
-                ? trans('accounts.telegram.network_taken')
-                : trans('accounts.telegram.error_generic');
+        errorMessage.value = trans(
+            KNOWN_CONNECT_ERRORS.includes(payload.reason)
+                ? `accounts.telegram.${payload.reason}`
+                : 'accounts.telegram.error_generic',
+        );
     },
 );
 

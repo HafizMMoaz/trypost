@@ -76,6 +76,7 @@ return [
         'retry' => '다시 시도',
         'error_generic' => '연결을 시작할 수 없습니다. 다시 시도해 주세요.',
         'network_taken' => '이 워크스페이스에는 이미 Telegram 채널이 연결되어 있습니다. 먼저 연결을 해제하세요.',
+        'wrong_chat' => '다시 연결하려는 채널에 명령을 게시하세요.',
     ],
 
     'facebook' => [

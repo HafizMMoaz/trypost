@@ -76,6 +76,7 @@ return [
         'retry' => 'Réessayer',
         'error_generic' => 'Impossible de démarrer la connexion. Veuillez réessayer.',
         'network_taken' => 'Cet espace de travail a déjà un canal Telegram connecté. Déconnectez-le d\'abord.',
+        'wrong_chat' => 'Publiez la commande dans le canal que vous reconnectez.',
     ],
 
     'facebook' => [

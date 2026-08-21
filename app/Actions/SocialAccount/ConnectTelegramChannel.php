@@ -46,6 +46,14 @@ class ConnectTelegramChannel
             return null;
         }
 
+        // Reject before consuming the nonce so the user can retry in the right
+        // chat with the code they already have.
+        if ($reconnect !== null && (string) $reconnect->platform_user_id !== $chatId) {
+            TelegramConnectFailed::dispatch($workspace->id, $nonce, 'wrong_chat');
+
+            return null;
+        }
+
         // Consume the code once so a leaked code can't be replayed to link another chat.
         if (! Cache::add("telegram:connect:{$nonce}", true, now()->addMinutes(15))) {
             return null;

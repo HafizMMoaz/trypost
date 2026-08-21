@@ -76,6 +76,7 @@ return [
         'retry' => '重试',
         'error_generic' => '无法启动连接，请重试。',
         'network_taken' => '此工作区已连接了一个 Telegram 频道。请先断开该连接。',
+        'wrong_chat' => '请在你要重新连接的频道中发送该命令。',
     ],
 
     'facebook' => [
