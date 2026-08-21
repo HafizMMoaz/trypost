@@ -26,8 +26,6 @@ test('accounts index requires authentication', function () {
 });
 
 test('accounts index shows platforms and connected accounts', function () {
-    config()->set('trypost.allow_multiple_social_accounts', false);
-
     SocialAccount::factory()->create([
         'workspace_id' => $this->workspace->id,
         'platform' => Platform::LinkedIn,
