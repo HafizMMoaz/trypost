@@ -27,7 +27,7 @@ class SocialController extends Controller
 
     protected function ensurePlatformEnabled(): void
     {
-        if (isset($this->platform) && ! $this->platform->isEnabled()) {
+        if (! $this->platform->isEnabled()) {
             abort(SymfonyResponse::HTTP_FORBIDDEN, 'This platform is currently unavailable.');
         }
     }
@@ -107,24 +107,23 @@ class SocialController extends Controller
             return null;
         }
 
-        $account = $workspace->socialAccounts()->find($reconnectId);
-
-        if (! $account?->platform instanceof SocialPlatform) {
-            return null;
-        }
-
-        if (! isset($this->platform) || $account->platform->network() !== $this->platform->network()) {
-            return null;
-        }
-
-        return $account->id;
+        return $workspace->socialAccounts()
+            ->whereIn('platform', $this->platform->networkPlatformValues())
+            ->find($reconnectId)
+            ?->id;
     }
 
     protected function reconnectAccount(Workspace $workspace): ?SocialAccount
     {
         $reconnectId = session('social_reconnect_id');
 
-        return is_string($reconnectId) ? $workspace->socialAccounts()->find($reconnectId) : null;
+        if (! is_string($reconnectId)) {
+            return null;
+        }
+
+        return $workspace->socialAccounts()
+            ->whereIn('platform', $this->platform->networkPlatformValues())
+            ->find($reconnectId);
     }
 
     /**

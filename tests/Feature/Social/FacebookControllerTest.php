@@ -654,6 +654,32 @@ test('facebook connect ignores a reconnect id from another workspace', function 
     expect(session('social_reconnect_id'))->toBeNull();
 });
 
+test('facebook connect ignores a reconnect id from another network', function () {
+    $linkedin = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::LinkedIn,
+        'platform_user_id' => 'linkedin-member',
+    ]);
+
+    $driverMock = Mockery::mock();
+    $driverMock->shouldReceive('usingGraphVersion')->andReturnSelf();
+    $driverMock->shouldReceive('setScopes')->andReturnSelf();
+    $driverMock->shouldReceive('redirect')->andReturn(Mockery::mock([
+        'getTargetUrl' => 'https://www.facebook.com/v25.0/dialog/oauth?test=1',
+    ]));
+
+    Socialite::shouldReceive('driver')
+        ->with('facebook')
+        ->andReturn($driverMock);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Inertia', 'true')
+        ->get(route('app.social.facebook.connect', ['reconnect' => $linkedin->id]))
+        ->assertStatus(409);
+
+    expect(session('social_reconnect_id'))->toBeNull();
+});
+
 test('facebook reconnect keeps the original card when multiple pages are returned', function () {
     $account = SocialAccount::factory()->create([
         'workspace_id' => $this->workspace->id,
