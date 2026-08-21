@@ -82,30 +82,16 @@ class SocialAccount extends Model
         return $this->belongsTo(Workspace::class);
     }
 
-    /**
-     * Whether the workspace already has a connected identity on this network.
-     * Reconnecting the same platform_user_id is excluded so updateOrCreate can proceed.
-     */
-    public static function occupiesNetwork(string $workspaceId, SocialPlatform $platform, ?string $exceptPlatformUserId = null): bool
+    public static function occupiesNetwork(string $workspaceId, SocialPlatform $platform): bool
     {
-        if (config('trypost.allow_multiple_social_accounts')) {
-            return false;
-        }
-
-        return static::query()
-            ->where('workspace_id', $workspaceId)
-            ->whereIn('platform', $platform->networkPlatformValues())
-            ->when(
-                $exceptPlatformUserId !== null,
-                fn (Builder $query) => $query->where('platform_user_id', '!=', $exceptPlatformUserId),
-            )
-            ->exists();
+        return ! config('trypost.allow_multiple_social_accounts')
+            && static::query()
+                ->where('workspace_id', $workspaceId)
+                ->whereIn('platform', $platform->networkPlatformValues())
+                ->exists();
     }
 
     /**
-     * Persist a connected identity, updating a reconnect target when one is
-     * provided. A unique-constraint race retries as an update of the winner.
-     *
      * @param  array<string, mixed>  $values
      */
     public static function connectIdentity(
@@ -115,32 +101,26 @@ class SocialAccount extends Model
         array $values,
         ?self $reconnect = null,
     ): self {
-        if ($reconnect !== null && $reconnect->workspace_id === $workspace->id) {
-            $reconnect->fill(array_merge($values, [
-                'platform_user_id' => $platformUserId,
-            ]));
-            $reconnect->save();
+        $values['platform_user_id'] = $platformUserId;
 
-            return $reconnect->fresh();
+        if ($reconnect?->workspace_id === $workspace->id) {
+            $reconnect->update($values);
+
+            return $reconnect;
         }
 
-        try {
-            return $workspace->socialAccounts()->updateOrCreate(
-                [
-                    'platform' => $platform->value,
-                    'platform_user_id' => $platformUserId,
-                ],
-                $values,
-            );
-        } catch (UniqueConstraintViolationException) {
-            $account = $workspace->socialAccounts()
-                ->where('platform', $platform->value)
-                ->where('platform_user_id', $platformUserId)
-                ->firstOrFail();
+        $identity = [
+            'platform' => $platform->value,
+            'platform_user_id' => $platformUserId,
+        ];
 
+        try {
+            return $workspace->socialAccounts()->updateOrCreate($identity, $values);
+        } catch (UniqueConstraintViolationException) {
+            $account = $workspace->socialAccounts()->where($identity)->firstOrFail();
             $account->update($values);
 
-            return $account->fresh();
+            return $account;
         }
     }
 

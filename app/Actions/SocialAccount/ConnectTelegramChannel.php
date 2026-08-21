@@ -35,7 +35,7 @@ class ConnectTelegramChannel
             ->where('platform_user_id', $chatId)
             ->exists();
 
-        if ($isNewAccount && SocialAccount::occupiesNetwork((string) $workspace->id, Platform::Telegram, $chatId)) {
+        if ($isNewAccount && SocialAccount::occupiesNetwork((string) $workspace->id, Platform::Telegram)) {
             TelegramConnectFailed::dispatch($workspace->id, $nonce, 'network_taken');
 
             return null;
