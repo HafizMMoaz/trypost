@@ -81,6 +81,26 @@ class SocialAccount extends Model
         return $this->belongsTo(Workspace::class);
     }
 
+    /**
+     * Whether the workspace already has a connected identity on this network.
+     * Reconnecting the same platform_user_id is excluded so updateOrCreate can proceed.
+     */
+    public static function occupiesNetwork(string $workspaceId, SocialPlatform $platform, ?string $exceptPlatformUserId = null): bool
+    {
+        if (config('trypost.allow_multiple_social_accounts')) {
+            return false;
+        }
+
+        return static::query()
+            ->where('workspace_id', $workspaceId)
+            ->whereIn('platform', $platform->networkPlatformValues())
+            ->when(
+                $exceptPlatformUserId !== null,
+                fn (Builder $query) => $query->where('platform_user_id', '!=', $exceptPlatformUserId),
+            )
+            ->exists();
+    }
+
     public function postPlatforms(): HasMany
     {
         return $this->hasMany(PostPlatform::class);

@@ -230,11 +230,8 @@ const cards = computed((): GridCard[] => {
         const accountsForNetwork = props.connectedAccounts.filter(
             (account) => account.network === platform.network,
         );
-        const visibleAccounts = allowMultipleSocialAccounts.value
-            ? accountsForNetwork
-            : accountsForNetwork.slice(0, 1);
 
-        for (const account of visibleAccounts) {
+        for (const account of accountsForNetwork) {
             result.push({
                 key: account.id,
                 platform,
@@ -246,12 +243,12 @@ const cards = computed((): GridCard[] => {
             });
         }
 
-        if (visibleAccounts.length === 0 || allowMultipleSocialAccounts.value) {
+        if (accountsForNetwork.length === 0 || allowMultipleSocialAccounts.value) {
             result.push({
                 key: `${platform.value}-connect`,
                 platform,
                 state: CardState.Connect,
-                isAdditional: visibleAccounts.length > 0,
+                isAdditional: accountsForNetwork.length > 0,
             });
         }
     }

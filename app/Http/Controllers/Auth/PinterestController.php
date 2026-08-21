@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Enums\SocialAccount\Platform as SocialPlatform;
 use App\Enums\SocialAccount\Status;
+use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
 use App\Models\Workspace;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -57,22 +58,29 @@ class PinterestController extends SocialController
 
             $avatarPath = uploadFromUrl($socialUser->getAvatar());
 
-            // Create new account
-            $workspace->socialAccounts()->create([
-                'platform' => $this->platform->value,
-                'platform_user_id' => $socialUser->getId(),
-                'username' => $socialUser->getNickname(),
-                'display_name' => $socialUser->getName() ?? $socialUser->getNickname(),
-                'avatar_url' => $avatarPath,
-                'access_token' => $socialUser->token,
-                'refresh_token' => $socialUser->refreshToken,
-                'token_expires_at' => $socialUser->expiresIn ? now()->addSeconds($socialUser->expiresIn) : now()->addDays(30),
-                // Pinterest returns scopes space-joined but Socialite doesn't split them, so re-split here.
-                'scopes' => explode(' ', implode(' ', $socialUser->approvedScopes)),
-                'status' => Status::Connected,
-            ]);
+            $workspace->socialAccounts()->updateOrCreate(
+                [
+                    'platform' => $this->platform->value,
+                    'platform_user_id' => $socialUser->getId(),
+                ],
+                [
+                    'username' => $socialUser->getNickname(),
+                    'display_name' => $socialUser->getName() ?? $socialUser->getNickname(),
+                    'avatar_url' => $avatarPath,
+                    'access_token' => $socialUser->token,
+                    'refresh_token' => $socialUser->refreshToken,
+                    'token_expires_at' => $socialUser->expiresIn ? now()->addSeconds($socialUser->expiresIn) : now()->addDays(30),
+                    // Pinterest returns scopes space-joined but Socialite doesn't split them, so re-split here.
+                    'scopes' => explode(' ', implode(' ', $socialUser->approvedScopes)),
+                    'status' => Status::Connected,
+                    'error_message' => null,
+                    'disconnected_at' => null,
+                ],
+            );
 
             return $this->popupCallback(true, __('accounts.popup_callback.connected'), $this->platform->value);
+        } catch (NetworkAlreadyConnectedException) {
+            return $this->popupCallback(false, __('accounts.popup_callback.network_taken'), $this->platform->value);
         } catch (\Exception $e) {
             Log::error('Pinterest OAuth Error', [
                 'error' => $e->getMessage(),

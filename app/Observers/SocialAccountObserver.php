@@ -24,16 +24,11 @@ class SocialAccountObserver
      */
     public function creating(SocialAccount $socialAccount): void
     {
-        if (config('trypost.allow_multiple_social_accounts') || ! $socialAccount->platform instanceof Platform) {
+        if (! $socialAccount->platform instanceof Platform) {
             return;
         }
 
-        $conflict = SocialAccount::query()
-            ->where('workspace_id', $socialAccount->workspace_id)
-            ->whereIn('platform', $socialAccount->platform->networkPlatformValues())
-            ->exists();
-
-        if ($conflict) {
+        if (SocialAccount::occupiesNetwork((string) $socialAccount->workspace_id, $socialAccount->platform)) {
             throw new NetworkAlreadyConnectedException($socialAccount->platform);
         }
     }

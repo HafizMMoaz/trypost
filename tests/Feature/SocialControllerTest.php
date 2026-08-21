@@ -40,6 +40,7 @@ test('accounts index shows platforms and connected accounts', function () {
         ->has('platforms')
         ->has('platforms.0.network')
         ->has('connectedAccounts', 1)
+        ->where('allowMultipleSocialAccounts', false)
     );
 });
 

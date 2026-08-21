@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Enums\SocialAccount\Platform as SocialPlatform;
 use App\Enums\SocialAccount\Status;
+use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
 use App\Services\Social\BlueskyLexicon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -106,6 +107,8 @@ class BlueskyController extends SocialController
             return $this->popupCallback(true, __('accounts.popup_callback.connected'), $this->platform->value);
         } catch (ValidationException $e) {
             throw $e;
+        } catch (NetworkAlreadyConnectedException) {
+            return $this->popupCallback(false, __('accounts.popup_callback.network_taken'), $this->platform->value);
         } catch (\Exception $e) {
             Log::error('Bluesky connection error', [
                 'error' => $e->getMessage(),

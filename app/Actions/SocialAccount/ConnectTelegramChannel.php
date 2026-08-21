@@ -34,7 +34,7 @@ class ConnectTelegramChannel
             ->where('platform_user_id', $chatId)
             ->exists();
 
-        if ($isNewAccount && self::networkAlreadyConnected($workspace, $chatId)) {
+        if ($isNewAccount && SocialAccount::occupiesNetwork((string) $workspace->id, Platform::Telegram, $chatId)) {
             TelegramConnectFailed::dispatch($workspace->id, $nonce, 'network_taken');
 
             return null;
@@ -101,17 +101,5 @@ class ConnectTelegramChannel
         } catch (Throwable) {
             return null;
         }
-    }
-
-    private static function networkAlreadyConnected(Workspace $workspace, string $chatId): bool
-    {
-        if (config('trypost.allow_multiple_social_accounts')) {
-            return false;
-        }
-
-        return $workspace->socialAccounts()
-            ->whereIn('platform', Platform::Telegram->networkPlatformValues())
-            ->where('platform_user_id', '!=', $chatId)
-            ->exists();
     }
 }

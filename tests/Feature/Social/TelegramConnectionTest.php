@@ -173,7 +173,7 @@ it('connects a second telegram channel when multiple social accounts are allowed
 
 it('reconnects an existing telegram channel', function () {
     Http::fake();
-    config(['trypost.self_hosted' => false]);
+    config(['trypost.allow_multiple_social_accounts' => false]);
 
     SocialAccount::factory()->telegram()->create([
         'workspace_id' => $this->workspace->id,

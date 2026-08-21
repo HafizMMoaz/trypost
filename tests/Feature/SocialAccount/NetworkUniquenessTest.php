@@ -147,6 +147,17 @@ test('self-hosted still enforces one-per-network when multiple social accounts a
     ]))->toThrow(NetworkAlreadyConnectedException::class);
 });
 
+test('occupiesNetwork ignores the identity being reconnected', function () {
+    SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Instagram,
+        'platform_user_id' => 'ig-a',
+    ]);
+
+    expect(SocialAccount::occupiesNetwork((string) $this->workspace->id, Platform::Instagram, 'ig-a'))->toBeFalse()
+        ->and(SocialAccount::occupiesNetwork((string) $this->workspace->id, Platform::Instagram, 'ig-b'))->toBeTrue();
+});
+
 test('blocks a same-id account connected via a different network variant', function () {
     SocialAccount::factory()->create([
         'workspace_id' => $this->workspace->id,
