@@ -107,28 +107,31 @@ class LinkedInController extends SocialController
             return $this->popupCallback(false, __('accounts.popup_callback.workspace_not_found'), $this->platform->value);
         }
 
-        $person = $this->personEnabled() ? $pending['person'] : null;
-        $organizations = $pending['organizations'];
-        $reconnect = $this->reconnectAccount($workspace);
+        // The profile and the pages are one pool of LinkedIn identities, so they
+        // go through the shared filter together and are split again for the view.
+        $connectable = collect($this->filterConnectableIdentities(
+            $workspace,
+            array_values(array_filter([
+                $this->personEnabled() ? $pending['person'] : null,
+                ...$pending['organizations'],
+            ])),
+            'id',
+        ));
 
-        if ($reconnect !== null) {
-            $target = (string) $reconnect->platform_user_id;
-            $person = (string) data_get($person, 'id') === $target ? $person : null;
-            $organizations = collect($organizations)
-                ->filter(fn (mixed $organization): bool => (string) data_get($organization, 'id') === $target)
-                ->values()
-                ->all();
+        if ($connectable->isEmpty()) {
+            session()->forget('linkedin_pending');
 
-            if ($person === null && $organizations === []) {
-                session()->forget('linkedin_pending');
-
-                return $this->popupCallback(false, __('accounts.popup_callback.page_not_found'), $this->platform->value);
-            }
+            return $this->noConnectableIdentities($this->reconnectAccount($workspace), 'page_not_found');
         }
 
+        $personId = (string) data_get($pending, 'person.id');
+
         return Inertia::render('accounts/LinkedInSelect', [
-            'person' => $person,
-            'organizations' => $organizations,
+            'person' => $connectable->firstWhere('id', $personId),
+            'organizations' => $connectable
+                ->reject(fn (array $identity): bool => (string) data_get($identity, 'id') === $personId)
+                ->values()
+                ->all(),
         ]);
     }
 

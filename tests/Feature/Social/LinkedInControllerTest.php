@@ -684,3 +684,67 @@ test('linkedin identity picker hides identities that are not the reconnect card'
             ->where('organizations.0.id', 111)
         );
 });
+
+test('select-identity hides an organization that is already connected', function () {
+    config()->set('trypost.allow_multiple_social_accounts', true);
+
+    SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::LinkedInPage,
+        'platform_user_id' => '123456',
+    ]);
+
+    session(['linkedin_pending' => [
+        'workspace_id' => $this->workspace->id,
+        'token' => 'test-access-token',
+        'refresh_token' => 'test-refresh-token',
+        'expires_in' => 5184000,
+        'approved_scopes' => ['openid', 'profile', 'email', 'w_member_social'],
+        'person' => ['id' => 'person-123', 'name' => 'John Doe', 'avatar' => null, 'vanity_name' => 'johndoe'],
+        'organizations' => [
+            ['id' => 123456, 'name' => 'Taken Company', 'vanity_name' => 'taken', 'logo' => null],
+            ['id' => 999, 'name' => 'Free Company', 'vanity_name' => 'free', 'logo' => null],
+        ],
+    ]]);
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.linkedin.select-identity'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('accounts/LinkedInSelect')
+            ->where('person.name', 'John Doe')
+            ->has('organizations', 1)
+            ->where('organizations.0.name', 'Free Company')
+        );
+});
+
+test('select-identity reports the network is taken when nothing is connectable', function () {
+    config()->set('trypost.allow_multiple_social_accounts', false);
+
+    SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::LinkedIn,
+        'platform_user_id' => 'person-123',
+    ]);
+
+    session(['linkedin_pending' => [
+        'workspace_id' => $this->workspace->id,
+        'token' => 'test-access-token',
+        'refresh_token' => 'test-refresh-token',
+        'expires_in' => 5184000,
+        'approved_scopes' => ['openid', 'profile', 'email', 'w_member_social'],
+        'person' => ['id' => 'person-123', 'name' => 'John Doe', 'avatar' => null, 'vanity_name' => 'johndoe'],
+        'organizations' => [],
+    ]]);
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.linkedin.select-identity'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('accounts/PopupCallback')
+            ->where('success', false)
+            ->where('message', __('accounts.popup_callback.network_taken'))
+        );
+
+    expect(session()->has('linkedin_pending'))->toBeFalse();
+});
