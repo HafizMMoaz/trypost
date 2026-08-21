@@ -148,9 +148,13 @@ class YouTubeController extends SocialController
             return $this->noConnectableIdentities($reconnect, 'channel_not_found');
         }
 
+        // Unlike the Facebook and Instagram pickers, a deferred re-GET of this
+        // route hits the Google API again, and fetchChannels() turns any
+        // failure into an empty list that clears the connect session.
         return Inertia::render('accounts/YouTubeChannelSelect', [
             'workspace' => $workspace,
             'channels' => $channels,
+            'onboardingProgress' => false,
         ]);
     }
 

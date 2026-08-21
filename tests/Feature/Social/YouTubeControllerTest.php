@@ -596,3 +596,44 @@ test('youtube select connects the reconnect target when it is the chosen channel
         ->and($account->fresh()->username)->toBe('target')
         ->and($this->workspace->socialAccounts()->where('platform', Platform::YouTube)->count())->toBe(1);
 });
+
+test('youtube channel picker does not defer onboarding progress back onto itself', function () {
+    session([
+        'social_connect_workspace' => $this->workspace->id,
+        'youtube_oauth' => [
+            'access_token' => 'test-access-token',
+            'refresh_token' => 'test-refresh-token',
+            'expires_in' => 3600,
+            'user_id' => 'google_user_123',
+        ],
+    ]);
+
+    Http::fake([
+        'https://www.googleapis.com/youtube/v3/channels*' => Http::response([
+            'items' => [
+                [
+                    'id' => 'UC_one',
+                    'snippet' => ['title' => 'One', 'customUrl' => '@one', 'thumbnails' => ['default' => ['url' => null]]],
+                    'statistics' => ['subscriberCount' => 1],
+                ],
+                [
+                    'id' => 'UC_two',
+                    'snippet' => ['title' => 'Two', 'customUrl' => '@two', 'thumbnails' => ['default' => ['url' => null]]],
+                    'statistics' => ['subscriberCount' => 2],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.youtube.select-channel'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            // The page component is missing from the repo (deleted in 7c00c338),
+            // so existence checking is off here the way SocialControllerTest
+            // does it. Tracked separately; this asserts the props only.
+            ->component('accounts/YouTubeChannelSelect', false)
+            ->where('onboardingProgress', false)
+            ->has('channels', 2)
+        );
+});

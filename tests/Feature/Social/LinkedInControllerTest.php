@@ -645,7 +645,7 @@ test('linkedin reconnect rejects picking a different identity than the card', fu
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->where('success', false)
-            ->where('message', __('accounts.popup_callback.page_not_found'))
+            ->where('message', __('accounts.popup_callback.wrong_account'))
         );
 
     expect($account->fresh()->platform_user_id)->toBe('person-123')

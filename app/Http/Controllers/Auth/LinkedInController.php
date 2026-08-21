@@ -185,13 +185,13 @@ class LinkedInController extends SocialController
                 }
 
                 if ($reconnect !== null && (string) data_get($organization, 'id') !== (string) $reconnect->platform_user_id) {
-                    return $this->popupCallback(false, __('accounts.popup_callback.page_not_found'), $this->platform->value);
+                    return $this->popupCallback(false, __('accounts.popup_callback.wrong_account'), $this->platform->value);
                 }
 
                 $this->connectOrganization($workspace, $pending, $organization);
             } else {
                 if ($reconnect !== null && (string) data_get($pending, 'person.id') !== (string) $reconnect->platform_user_id) {
-                    return $this->popupCallback(false, __('accounts.popup_callback.page_not_found'), $this->platform->value);
+                    return $this->popupCallback(false, __('accounts.popup_callback.wrong_account'), $this->platform->value);
                 }
 
                 $this->connectPerson($workspace, $pending);
