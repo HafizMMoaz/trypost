@@ -7,6 +7,7 @@ use App\Enums\SocialAccount\Status;
 use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
 use App\Models\SocialAccount;
 use App\Models\Workspace;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 
 beforeEach(function () {
@@ -189,7 +190,7 @@ test('the same workspace platform identity cannot be stored twice', function () 
     ]))->toThrow(UniqueConstraintViolationException::class);
 });
 
-test('connectIdentity updates the reconnect target even when the identity changes', function () {
+test('connectIdentity refuses to repoint the reconnect target at another identity', function () {
     config()->set('trypost.allow_multiple_social_accounts', true);
 
     $account = SocialAccount::factory()->create([
@@ -199,16 +200,65 @@ test('connectIdentity updates the reconnect target even when the identity change
         'username' => 'old',
     ]);
 
-    $updated = SocialAccount::connectIdentity(
+    expect(fn () => SocialAccount::connectIdentity(
         $this->workspace,
         Platform::Instagram,
         'ig-b',
         ['username' => 'new', 'status' => Status::Connected],
         $account,
+    ))->toThrow(NetworkAlreadyConnectedException::class);
+
+    expect($account->fresh()->platform_user_id)->toBe('ig-a')
+        ->and($account->fresh()->username)->toBe('old')
+        ->and($this->workspace->socialAccounts()->count())->toBe(1);
+});
+
+test('connectIdentity keeps posts on the card when a stray identity is authorized', function () {
+    config()->set('trypost.allow_multiple_social_accounts', true);
+
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::X,
+        'platform_user_id' => 'x-brand',
+        'username' => 'brand',
+    ]);
+
+    expect(fn () => SocialAccount::connectIdentity(
+        $this->workspace,
+        Platform::X,
+        'x-personal',
+        [
+            'username' => 'personal',
+            'status' => Status::Connected,
+            'access_token' => 'personal-token',
+        ],
+        $account,
+    ))->toThrow(NetworkAlreadyConnectedException::class);
+
+    expect($account->fresh()->platform_user_id)->toBe('x-brand')
+        ->and($account->fresh()->username)->toBe('brand')
+        ->and($this->workspace->socialAccounts()->where('platform_user_id', 'x-personal')->exists())->toBeFalse();
+});
+
+test('connectIdentity still reconnects the same identity across a network variant', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::LinkedIn,
+        'platform_user_id' => 'li-same',
+        'username' => 'old',
+    ]);
+
+    $updated = SocialAccount::connectIdentity(
+        $this->workspace,
+        Platform::LinkedInPage,
+        'li-same',
+        ['username' => 'new', 'status' => Status::Connected],
+        $account,
     );
 
     expect($updated->id)->toBe($account->id)
-        ->and($updated->platform_user_id)->toBe('ig-b')
+        ->and($updated->platform)->toBe(Platform::LinkedInPage)
+        ->and($updated->username)->toBe('new')
         ->and($this->workspace->socialAccounts()->count())->toBe(1);
 });
 
@@ -259,4 +309,21 @@ test('connectIdentity ignores a reconnect target from another network', function
         ->and($instagram->platform)->toBe(Platform::Instagram)
         ->and($facebook->fresh()->platform)->toBe(Platform::Facebook)
         ->and($this->workspace->socialAccounts()->count())->toBe(2);
+});
+
+test('the observer leaves a missing platform to the database instead of a type error', function () {
+    SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Instagram,
+        'platform_user_id' => 'ig-a',
+    ]);
+
+    $account = new SocialAccount([
+        'workspace_id' => $this->workspace->id,
+        'platform_user_id' => 'no-platform',
+    ]);
+
+    expect(fn () => $account->save())
+        ->toThrow(QueryException::class)
+        ->and(fn () => $account->save())->not->toThrow(TypeError::class);
 });

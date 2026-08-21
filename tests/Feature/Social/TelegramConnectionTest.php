@@ -205,8 +205,9 @@ it('issues a connect code that carries the reconnect card', function () {
     expect(data_get(TelegramConnectCode::decode($response->json('code')), 'reconnect_id'))->toBe($account->id);
 });
 
-it('updates the reconnect card when a different channel posts the code', function () {
+it('keeps the reconnect card on its own chat when a different channel posts the code', function () {
     Http::fake();
+    Event::fake([TelegramConnectFailed::class]);
     config(['trypost.allow_multiple_social_accounts' => false]);
 
     $account = SocialAccount::factory()->telegram()->create([
@@ -220,8 +221,34 @@ it('updates the reconnect card when a different channel posts the code', functio
         ->postJson(route('telegram.webhook'), telegramUpdate($code))
         ->assertNoContent();
 
+    Event::assertDispatched(
+        TelegramConnectFailed::class,
+        fn (TelegramConnectFailed $event): bool => $event->reason === 'network_taken'
+    );
+
     expect($this->workspace->socialAccounts()->count())->toBe(1)
-        ->and($account->fresh()->platform_user_id)->toBe('-1001234567890');
+        ->and($account->fresh()->platform_user_id)->toBe('-1009999999999');
+});
+
+it('reconnects the card when its own chat posts the code', function () {
+    Http::fake();
+    config(['trypost.allow_multiple_social_accounts' => false]);
+
+    $account = SocialAccount::factory()->telegram()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform_user_id' => '-1001234567890',
+        'username' => 'stale',
+    ]);
+
+    $code = TelegramConnectCode::issue($this->workspace->id, now()->addMinutes(15), $account->id);
+
+    $this->withHeader('X-Telegram-Bot-Api-Secret-Token', 'shh-secret')
+        ->postJson(route('telegram.webhook'), telegramUpdate($code))
+        ->assertNoContent();
+
+    expect($this->workspace->socialAccounts()->count())->toBe(1)
+        ->and($account->fresh()->platform_user_id)->toBe('-1001234567890')
+        ->and($account->fresh()->id)->toBe($account->id);
 });
 
 it('consumes the code once so it cannot be replayed for another chat', function () {

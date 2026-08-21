@@ -93,6 +93,12 @@ class SocialAccount extends Model
     }
 
     /**
+     * Persist a freshly authorized identity.
+     *
+     * A reconnect only reuses its row when the provider returned the very same
+     * identity. Authorizing a different account is refused instead of repointing
+     * the card (and every post scheduled against it) at a stranger.
+     *
      * @param  array<string, mixed>  $values
      */
     public static function connectIdentity(
@@ -114,6 +120,10 @@ class SocialAccount extends Model
             $reconnect?->workspace_id === $workspace->id
             && $reconnect->platform->network() === $platform->network()
         ) {
+            if ((string) $reconnect->platform_user_id !== $platformUserId) {
+                throw new NetworkAlreadyConnectedException($platform);
+            }
+
             try {
                 $reconnect->update($values);
 
