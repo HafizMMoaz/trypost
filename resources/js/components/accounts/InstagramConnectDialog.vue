@@ -37,7 +37,11 @@ const showsFacebook = () => props.methods.includes(Platform.InstagramFacebook);
 
 <template>
     <Dialog v-model:open="open">
-        <DialogContent class="sm:max-w-md" dusk="instagram-connect-dialog">
+        <DialogContent
+            class="sm:max-w-md"
+            data-testid="instagram-connect-dialog"
+            dusk="instagram-connect-dialog"
+        >
             <DialogHeader>
                 <div class="flex items-start gap-3">
                     <img
@@ -61,6 +65,7 @@ const showsFacebook = () => props.methods.includes(Platform.InstagramFacebook);
                     v-if="showsStandalone()"
                     variant="outline"
                     class="h-auto justify-start gap-3 px-4 py-3 text-left whitespace-normal"
+                    data-testid="instagram-connect-standalone"
                     dusk="instagram-connect-standalone"
                     @click="choose(Platform.Instagram)"
                 >
@@ -83,6 +88,7 @@ const showsFacebook = () => props.methods.includes(Platform.InstagramFacebook);
                     v-if="showsFacebook()"
                     variant="outline"
                     class="h-auto justify-start gap-3 px-4 py-3 text-left whitespace-normal"
+                    data-testid="instagram-connect-facebook"
                     dusk="instagram-connect-facebook"
                     @click="choose(Platform.InstagramFacebook)"
                 >

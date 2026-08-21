@@ -67,6 +67,14 @@ const { openOAuthPopup } = useOAuthPopup((result) => {
 const connectEntry = (platform: string): string =>
     platform === Platform.LinkedInPage ? Platform.LinkedIn : platform;
 
+const openConnect = (platform: string, reconnectId?: string) => {
+    const url = oauthConnectUrl(platform, reconnectId);
+
+    if (url) {
+        openOAuthPopup(url);
+    }
+};
+
 const startConnect = (platform: string, reconnectId?: string) => {
     const entry = connectEntry(platform);
 
@@ -81,11 +89,7 @@ const startConnect = (platform: string, reconnectId?: string) => {
         return;
     }
 
-    const url = oauthConnectUrl(entry, reconnectId);
-
-    if (url) {
-        openOAuthPopup(url);
-    }
+    openConnect(entry, reconnectId);
 };
 
 const disconnectAccount = (account: ConnectedAccount) => {
@@ -250,6 +254,8 @@ const cards = computed<ConnectCard[]>(() => {
                     v-else
                     size="sm"
                     class="mt-auto w-full"
+                    :data-testid="`connect-${card.platform.value}`"
+                    :dusk="`connect-${card.platform.value}`"
                     @click="startConnect(card.platform.value)"
                 >
                     {{
@@ -269,7 +275,7 @@ const cards = computed<ConnectCard[]>(() => {
         <InstagramConnectDialog
             v-model:open="instagramOpen"
             :methods="instagramMethods"
-            @select="startConnect"
+            @select="openConnect"
         />
 
         <ConfirmDeleteModal
