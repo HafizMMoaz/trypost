@@ -33,7 +33,7 @@ return [
 
     'allow_multiple_social_accounts' => (bool) env(
         'ALLOW_MULTIPLE_SOCIAL_ACCOUNTS',
-        env('SELF_HOSTED', false),
+        env('SELF_HOSTED', true),
     ),
 
     /*
