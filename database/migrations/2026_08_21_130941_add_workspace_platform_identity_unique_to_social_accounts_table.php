@@ -3,13 +3,16 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Query\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
+    private int $rewrittenAutomations = 0;
+
     public function up(): void
     {
         $this->collapseDuplicateIdentities();
@@ -22,6 +25,11 @@ return new class extends Migration
         });
     }
 
+    /**
+     * Drops the index only. The data merge in `up()` is one-way: the losing
+     * rows are gone, so rolling back leaves the collapsed identities collapsed.
+     * Every merge is logged at warning level so it can be reconstructed.
+     */
     public function down(): void
     {
         Schema::table('social_accounts', function (Blueprint $table) {
@@ -57,15 +65,29 @@ return new class extends Migration
                 continue;
             }
 
-            DB::table('post_platforms')
+            $repointed = DB::table('post_platforms')
                 ->whereIn('social_account_id', $ids)
                 ->update(['social_account_id' => $keepId]);
 
+            $this->rewrittenAutomations = 0;
             $this->repointAutomations((string) $duplicate->workspace_id, $ids, $keepId);
 
             DB::table('social_accounts')->whereIn('id', $ids)->delete();
 
-            $this->dropRepeatedPostTargets($keepId);
+            $dropped = $this->dropRepeatedPostTargets($keepId);
+
+            // Self-hosted installs run this unattended and it cannot be undone,
+            // so leave enough behind to reconstruct what happened.
+            Log::warning('Collapsed duplicate social accounts', [
+                'workspace_id' => $duplicate->workspace_id,
+                'platform' => $duplicate->platform,
+                'platform_user_id' => $duplicate->platform_user_id,
+                'kept_id' => $keepId,
+                'dropped_ids' => $ids,
+                'post_platforms_repointed' => $repointed,
+                'post_platforms_deleted' => $dropped,
+                'automations_rewritten' => $this->rewrittenAutomations,
+            ]);
         }
     }
 
@@ -74,7 +96,7 @@ return new class extends Migration
      * real run keep the same row. A null `created_at` sorts oldest on every
      * engine rather than first on Postgres and last on MySQL.
      */
-    private function newestFirst(Builder $query): Builder
+    private function newestFirst(QueryBuilder $query): QueryBuilder
     {
         return $query
             ->orderByRaw('case when created_at is null then 1 else 0 end')
@@ -95,8 +117,10 @@ return new class extends Migration
      * they never saw, both pending and created in the same second. Keeping the
      * disabled one would silently stop a scheduled post reaching that account.
      */
-    private function dropRepeatedPostTargets(string $keepId): void
+    private function dropRepeatedPostTargets(string $keepId): int
     {
+        $deleted = 0;
+
         $repeated = DB::table('post_platforms')
             ->select('post_id')
             ->where('social_account_id', $keepId)
@@ -105,20 +129,29 @@ return new class extends Migration
             ->pluck('post_id');
 
         foreach ($repeated as $postId) {
+            $target = fn (): QueryBuilder => DB::table('post_platforms')
+                ->where('social_account_id', $keepId)
+                ->where('post_id', $postId);
+
             $ids = $this->newestFirst(
-                DB::table('post_platforms')
-                    ->where('social_account_id', $keepId)
-                    ->where('post_id', $postId)
+                $target()
                     ->where('status', '!=', 'published')
                     ->orderByRaw('case when enabled then 0 else 1 end')
             )->pluck('id')->all();
 
-            array_shift($ids);
+            // With a published row the content already went out, so every
+            // unpublished repeat is a second delivery waiting to happen -
+            // PostPlatform::scopeEnabled() filters on `enabled` alone.
+            if (! $target()->where('status', 'published')->exists()) {
+                array_shift($ids);
+            }
 
             if ($ids !== []) {
-                DB::table('post_platforms')->whereIn('id', $ids)->delete();
+                $deleted += DB::table('post_platforms')->whereIn('id', $ids)->delete();
             }
         }
+
+        return $deleted;
     }
 
     /**
@@ -143,15 +176,17 @@ return new class extends Migration
                 continue;
             }
 
-            $rewritten = $this->dedupeAccountEntries(
-                $this->replaceAccountIds($nodes, $droppedIds, $keepId)
-            );
+            $replaced = $this->replaceAccountIds($nodes, $droppedIds, $keepId);
 
-            if ($rewritten !== $nodes) {
-                DB::table('automations')
-                    ->where('id', $automation->id)
-                    ->update(['nodes' => json_encode($rewritten)]);
+            if ($replaced === $nodes) {
+                continue;
             }
+
+            DB::table('automations')
+                ->where('id', $automation->id)
+                ->update(['nodes' => json_encode($this->dedupeAccountEntries($replaced))]);
+
+            $this->rewrittenAutomations++;
         }
     }
 

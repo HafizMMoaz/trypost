@@ -328,3 +328,83 @@ test('it repoints the legacy social_account_ids shape too', function () {
 
     expect(data_get($automation->fresh()->nodes, '0.config.social_account_ids'))->toBe([$newer->id]);
 });
+
+test('it drops every unpublished repeat once the post already published there', function () {
+    $older = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Pinterest,
+        'platform_user_id' => 'pin-1',
+        'created_at' => now()->subDay(),
+    ]);
+
+    $newer = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Pinterest,
+        'platform_user_id' => 'pin-1',
+        'created_at' => now(),
+    ]);
+
+    $post = Post::factory()->create(['workspace_id' => $this->workspace->id]);
+
+    $published = PostPlatform::factory()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $older->id,
+        'platform' => Platform::Pinterest,
+        'status' => PostPlatformStatus::Published,
+    ]);
+
+    // Enabled and pending against the duplicate: a republish would deliver the
+    // same content to the same identity a second time.
+    PostPlatform::factory()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $newer->id,
+        'platform' => Platform::Pinterest,
+        'status' => PostPlatformStatus::Pending,
+        'enabled' => true,
+    ]);
+
+    $this->migration->up();
+
+    expect(PostPlatform::where('post_id', $post->id)->pluck('id')->all())->toBe([$published->id]);
+});
+
+test('it leaves automations the merge never touched alone', function () {
+    SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Pinterest,
+        'platform_user_id' => 'pin-1',
+        'created_at' => now()->subDay(),
+    ]);
+
+    SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Pinterest,
+        'platform_user_id' => 'pin-1',
+        'created_at' => now(),
+    ]);
+
+    $untouched = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::X,
+        'platform_user_id' => 'x-1',
+    ]);
+
+    $nodes = [
+        [
+            'id' => 'node-1',
+            'type' => 'generate',
+            'config' => [
+                'accounts' => [
+                    ['social_account_id' => $untouched->id, 'content_type' => 'x_post'],
+                    ['social_account_id' => $untouched->id, 'content_type' => 'x_thread'],
+                ],
+            ],
+        ],
+    ];
+
+    $automation = Automation::factory()->for($this->workspace)->create(['nodes' => $nodes]);
+
+    $this->migration->up();
+
+    expect($automation->fresh()->nodes)->toBe($nodes);
+});
