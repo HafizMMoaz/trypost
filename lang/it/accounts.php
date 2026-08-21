@@ -142,6 +142,8 @@ return [
         'reconnected' => 'Account ricollegato!',
         'error_connecting' => 'Errore durante il collegamento dell\'account. Riprova.',
         'network_taken' => 'Questo workspace ha già un account per questa rete. Scollegalo prima.',
+        'wrong_account' => 'Questo è un account diverso. Autorizza quello che stai ricollegando.',
+        'all_connected' => 'Tutti gli account di questo accesso sono già collegati.',
         'error_connecting_page' => 'Errore durante il collegamento della pagina. Riprova.',
         'error_connecting_channel' => 'Errore durante il collegamento del canale. Riprova.',
         'session_expired' => 'Sessione scaduta. Riprova.',

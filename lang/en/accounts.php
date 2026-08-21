@@ -142,6 +142,8 @@ return [
         'reconnected' => 'Account reconnected!',
         'error_connecting' => 'Error connecting account. Please try again.',
         'network_taken' => 'This workspace already has an account for this network. Disconnect it first.',
+        'wrong_account' => 'That is a different account. Authorize the one you are reconnecting.',
+        'all_connected' => 'Every account on this login is already connected.',
         'error_connecting_page' => 'Error connecting page. Please try again.',
         'error_connecting_channel' => 'Error connecting channel. Please try again.',
         'session_expired' => 'Session expired. Please try again.',

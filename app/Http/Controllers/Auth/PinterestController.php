@@ -70,8 +70,8 @@ class PinterestController extends SocialController
             );
 
             return $this->connectedCallback($reconnect);
-        } catch (NetworkAlreadyConnectedException) {
-            return $this->popupCallback(false, __('accounts.popup_callback.network_taken'), $this->platform->value);
+        } catch (NetworkAlreadyConnectedException $e) {
+            return $this->popupCallback(false, __("accounts.popup_callback.{$e->messageKey}"), $this->platform->value);
         } catch (\Exception $e) {
             Log::error('Pinterest OAuth Error', [
                 'error' => $e->getMessage(),

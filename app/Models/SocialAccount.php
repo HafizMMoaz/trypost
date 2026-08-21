@@ -121,7 +121,7 @@ class SocialAccount extends Model
             && $reconnect->platform->network() === $platform->network()
         ) {
             if ((string) $reconnect->platform_user_id !== $platformUserId) {
-                throw new NetworkAlreadyConnectedException($platform);
+                throw NetworkAlreadyConnectedException::identityMismatch($platform);
             }
 
             try {

@@ -215,3 +215,40 @@ test('x callback handles oauth errors gracefully', function () {
     $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
     $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'Error connecting account. Please try again.'));
 });
+
+test('x reconnect that authorizes another account says so instead of network_taken', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::X,
+        'platform_user_id' => 'x-brand',
+        'username' => 'brand',
+    ]);
+
+    session([
+        'social_connect_workspace' => $this->workspace->id,
+        'social_reconnect_id' => $account->id,
+    ]);
+
+    $socialiteUser = Mockery::mock(SocialiteUser::class);
+    $socialiteUser->shouldReceive('getId')->andReturn('x-personal');
+    $socialiteUser->shouldReceive('getNickname')->andReturn('personal');
+    $socialiteUser->shouldReceive('getName')->andReturn('Personal');
+    $socialiteUser->shouldReceive('getAvatar')->andReturn(null);
+    $socialiteUser->token = 'personal-token';
+    $socialiteUser->refreshToken = 'personal-refresh';
+    $socialiteUser->expiresIn = 3600;
+
+    Socialite::shouldReceive('driver')
+        ->with('x')
+        ->andReturn(Mockery::mock(['user' => $socialiteUser]));
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.x.callback'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('success', false)
+            ->where('message', __('accounts.popup_callback.wrong_account'))
+        );
+
+    expect($account->fresh()->platform_user_id)->toBe('x-brand');
+});

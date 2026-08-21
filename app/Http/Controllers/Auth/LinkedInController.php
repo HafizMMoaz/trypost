@@ -99,6 +99,8 @@ class LinkedInController extends SocialController
             return $this->popupCallback(false, __('accounts.popup_callback.session_expired'), $this->platform->value);
         }
 
+        // The pending payload carries its own workspace so the picker survives a
+        // cleared connect session; connectWorkspace() is for session-driven flows.
         $workspace = Workspace::find($pending['workspace_id']);
 
         if (! $workspace || ! $request->user()->can('manageAccounts', $workspace)) {
@@ -118,6 +120,8 @@ class LinkedInController extends SocialController
                 ->all();
 
             if ($person === null && $organizations === []) {
+                session()->forget('linkedin_pending');
+
                 return $this->popupCallback(false, __('accounts.popup_callback.page_not_found'), $this->platform->value);
             }
         }
@@ -147,6 +151,8 @@ class LinkedInController extends SocialController
             return $this->popupCallback(false, __('accounts.popup_callback.session_expired'), $this->platform->value);
         }
 
+        // The pending payload carries its own workspace so the picker survives a
+        // cleared connect session; connectWorkspace() is for session-driven flows.
         $workspace = Workspace::find($pending['workspace_id']);
 
         if (! $workspace || ! $request->user()->can('manageAccounts', $workspace)) {
@@ -186,8 +192,8 @@ class LinkedInController extends SocialController
             session()->forget('linkedin_pending');
 
             return $this->connectedCallback($reconnect);
-        } catch (NetworkAlreadyConnectedException) {
-            return $this->popupCallback(false, __('accounts.popup_callback.network_taken'), $this->platform->value);
+        } catch (NetworkAlreadyConnectedException $e) {
+            return $this->popupCallback(false, __("accounts.popup_callback.{$e->messageKey}"), $this->platform->value);
         } catch (\Exception $e) {
             Log::error('LinkedIn selection error', [
                 'error' => $e->getMessage(),

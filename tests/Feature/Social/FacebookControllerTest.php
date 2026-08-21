@@ -841,3 +841,44 @@ test('facebook page picker refuses a user who can no longer manage accounts', fu
             ->where('message', __('accounts.popup_callback.workspace_not_found'))
         );
 });
+
+test('facebook says every page is connected instead of network_taken in multi-account mode', function () {
+    config()->set('trypost.allow_multiple_social_accounts', true);
+
+    SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Facebook,
+        'platform_user_id' => 'page-1',
+    ]);
+
+    session(['social_connect_workspace' => $this->workspace->id]);
+
+    $socialiteUser = Mockery::mock(SocialiteUser::class);
+    $socialiteUser->shouldReceive('getId')->andReturn('fb-user');
+    $socialiteUser->token = 'user-token';
+
+    $driverMock = Mockery::mock();
+    $driverMock->shouldReceive('usingGraphVersion')->andReturnSelf();
+    $driverMock->shouldReceive('user')->andReturn($socialiteUser);
+
+    Socialite::shouldReceive('driver')
+        ->with('facebook')
+        ->andReturn($driverMock);
+
+    Http::fake([
+        'https://graph.facebook.com/*/me/accounts*' => Http::response([
+            'data' => [
+                ['id' => 'page-1', 'name' => 'Only Page', 'access_token' => 'page-token'],
+            ],
+        ], 200),
+        'https://graph.facebook.com/*' => Http::response(['id' => 'fb-user', 'name' => 'Me'], 200),
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.facebook.callback'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('success', false)
+            ->where('message', __('accounts.popup_callback.all_connected'))
+        );
+});

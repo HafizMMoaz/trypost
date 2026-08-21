@@ -144,6 +144,8 @@ return [
         'reconnected' => 'Hesap yeniden bağlandı!',
         'error_connecting' => 'Hesap bağlanırken hata oluştu. Lütfen tekrar deneyin.',
         'network_taken' => 'Bu çalışma alanında bu ağa ait zaten bir hesap var. Önce bağlantısını kesin.',
+        'wrong_account' => 'Bu farklı bir hesap. Yeniden bağladığınız hesabı yetkilendirin.',
+        'all_connected' => 'Bu oturumdaki tüm hesaplar zaten bağlı.',
         'error_connecting_page' => 'Sayfa bağlanırken hata oluştu. Lütfen tekrar deneyin.',
         'error_connecting_channel' => 'Kanal bağlanırken hata oluştu. Lütfen tekrar deneyin.',
         'session_expired' => 'Oturum süresi doldu. Lütfen tekrar deneyin.',
