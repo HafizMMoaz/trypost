@@ -539,3 +539,148 @@ test('user can connect multiple linkedin organizations when multiple social acco
 
     expect($this->workspace->socialAccounts()->where('platform', Platform::LinkedInPage)->count())->toBe(2);
 });
+
+test('linkedin reconnect keeps the original profile card', function () {
+    $account = SocialAccount::factory()->linkedin()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform_user_id' => 'person-123',
+        'username' => 'old',
+        'access_token' => 'expired-token',
+    ]);
+
+    session([
+        'social_reconnect_id' => $account->id,
+        'linkedin_pending' => [
+            'workspace_id' => $this->workspace->id,
+            'token' => 'fresh-access-token',
+            'refresh_token' => 'fresh-refresh-token',
+            'expires_in' => 5184000,
+            'approved_scopes' => ['openid', 'profile', 'email', 'w_member_social'],
+            'person' => ['id' => 'person-123', 'name' => 'John Doe', 'avatar' => null, 'vanity_name' => 'johndoe'],
+            'organizations' => [
+                ['id' => 111, 'name' => 'My Company', 'vanity_name' => 'myco', 'logo' => null],
+            ],
+        ],
+    ]);
+
+    $this->actingAs($this->user)
+        ->post(route('app.social.linkedin.select'), ['type' => 'person'])
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('success', true)
+            ->where('message', __('accounts.popup_callback.reconnected'))
+        );
+
+    expect($this->workspace->socialAccounts()->count())->toBe(1)
+        ->and($account->fresh()->access_token)->toBe('fresh-access-token')
+        ->and($account->fresh()->username)->toBe('johndoe');
+});
+
+test('linkedin reconnect keeps the original page card', function () {
+    $account = SocialAccount::factory()->linkedinPage()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform_user_id' => '111',
+        'username' => 'old-page',
+        'access_token' => 'expired-token',
+    ]);
+
+    session([
+        'social_reconnect_id' => $account->id,
+        'linkedin_pending' => [
+            'workspace_id' => $this->workspace->id,
+            'token' => 'fresh-access-token',
+            'refresh_token' => 'fresh-refresh-token',
+            'expires_in' => 5184000,
+            'approved_scopes' => ['openid', 'w_organization_social'],
+            'person' => ['id' => 'person-123', 'name' => 'John Doe', 'avatar' => null, 'vanity_name' => 'johndoe'],
+            'organizations' => [
+                ['id' => 111, 'name' => 'My Company', 'vanity_name' => 'myco', 'logo' => null],
+            ],
+        ],
+    ]);
+
+    $this->actingAs($this->user)
+        ->post(route('app.social.linkedin.select'), [
+            'type' => 'organization',
+            'organization_id' => 111,
+        ])
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('success', true)
+            ->where('message', __('accounts.popup_callback.reconnected'))
+        );
+
+    expect($this->workspace->socialAccounts()->count())->toBe(1)
+        ->and($account->fresh()->platform)->toBe(Platform::LinkedInPage)
+        ->and($account->fresh()->access_token)->toBe('fresh-access-token')
+        ->and($account->fresh()->username)->toBe('myco');
+});
+
+test('linkedin reconnect rejects picking a different identity than the card', function () {
+    $account = SocialAccount::factory()->linkedin()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform_user_id' => 'person-123',
+    ]);
+
+    session([
+        'social_reconnect_id' => $account->id,
+        'linkedin_pending' => [
+            'workspace_id' => $this->workspace->id,
+            'token' => 'fresh-access-token',
+            'refresh_token' => 'fresh-refresh-token',
+            'expires_in' => 5184000,
+            'approved_scopes' => ['openid', 'w_organization_social'],
+            'person' => ['id' => 'person-123', 'name' => 'John Doe', 'avatar' => null, 'vanity_name' => 'johndoe'],
+            'organizations' => [
+                ['id' => 111, 'name' => 'My Company', 'vanity_name' => 'myco', 'logo' => null],
+            ],
+        ],
+    ]);
+
+    $this->actingAs($this->user)
+        ->post(route('app.social.linkedin.select'), [
+            'type' => 'organization',
+            'organization_id' => 111,
+        ])
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('success', false)
+            ->where('message', __('accounts.popup_callback.page_not_found'))
+        );
+
+    expect($account->fresh()->platform_user_id)->toBe('person-123')
+        ->and($this->workspace->socialAccounts()->count())->toBe(1);
+});
+
+test('linkedin identity picker hides identities that are not the reconnect card', function () {
+    $account = SocialAccount::factory()->linkedinPage()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform_user_id' => '111',
+    ]);
+
+    session([
+        'social_reconnect_id' => $account->id,
+        'linkedin_pending' => [
+            'workspace_id' => $this->workspace->id,
+            'token' => 'fresh-access-token',
+            'refresh_token' => 'fresh-refresh-token',
+            'expires_in' => 5184000,
+            'approved_scopes' => ['openid', 'w_organization_social'],
+            'person' => ['id' => 'person-123', 'name' => 'John Doe', 'avatar' => null, 'vanity_name' => 'johndoe'],
+            'organizations' => [
+                ['id' => 111, 'name' => 'My Company', 'vanity_name' => 'myco', 'logo' => null],
+                ['id' => 222, 'name' => 'Other Co', 'vanity_name' => 'other', 'logo' => null],
+            ],
+        ],
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.linkedin.select-identity'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('accounts/LinkedInSelect')
+            ->where('person', null)
+            ->has('organizations', 1)
+            ->where('organizations.0.id', 111)
+        );
+});

@@ -83,6 +83,7 @@ class BlueskyController extends SocialController
             $profile = $profileResponse->successful() ? $profileResponse->json() : [];
 
             $avatarPath = data_get($profile, 'avatar') ? uploadFromUrl(data_get($profile, 'avatar')) : null;
+            $reconnect = $this->reconnectAccount($workspace);
 
             SocialAccount::connectIdentity(
                 $workspace,
@@ -104,10 +105,12 @@ class BlueskyController extends SocialController
                         'password' => encrypt($request->password),
                     ],
                 ],
-                $this->reconnectAccount($workspace),
+                $reconnect,
             );
 
-            return $this->popupCallback(true, __('accounts.popup_callback.connected'), $this->platform->value);
+            return $this->popupCallback(true, $reconnect
+                ? __('accounts.popup_callback.reconnected')
+                : __('accounts.popup_callback.connected'), $this->platform->value);
         } catch (ValidationException $e) {
             throw $e;
         } catch (NetworkAlreadyConnectedException) {

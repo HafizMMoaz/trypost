@@ -228,9 +228,9 @@ One connected identity per social network per workspace is the Cloud default. Th
 
 | Env | Config | Default | Effect |
 | --- | --- | --- | --- |
-| `ALLOW_MULTIPLE_SOCIAL_ACCOUNTS` | `trypost.allow_multiple_social_accounts` | `false` | `true`: a workspace may connect more than one account of the same network (two LinkedIns, two Instagrams, …). `false`: one per network (LinkedIn profile + page count as one; Instagram standalone + Instagram-via-Facebook count as one). Reconnecting the same `platform` + `platform_user_id` still updates the existing row. Shared to Inertia as `allowMultipleSocialAccounts`. |
+| `ALLOW_MULTIPLE_SOCIAL_ACCOUNTS` | `trypost.allow_multiple_social_accounts` | `false` (falls back to `SELF_HOSTED` when unset) | `true`: a workspace may connect more than one account of the same network (two LinkedIns, two Instagrams, …). `false`: one per network (LinkedIn profile + page count as one; Instagram standalone + Instagram-via-Facebook count as one). Reconnecting the same `platform` + `platform_user_id` still updates the existing row. Shared to Inertia as `allowMultipleSocialAccounts`. |
 
-Self-hosted compose / `.env.example` set this `true`. Do **not** use `selfHosted` for this check (observer, Telegram connect, `NetworkConnectGrid`).
+Self-hosted compose / `.env.example` set this `true`. When the env is unset, the config falls back to `SELF_HOSTED` so existing self-hosted installs keep multiple accounts. Do **not** use `selfHosted` for the occupancy check (observer, Telegram connect, `NetworkConnectGrid`).
 
 ## Social Platform API Documentation (official sources)
 

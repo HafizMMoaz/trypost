@@ -113,11 +113,11 @@ class SocialController extends Controller
             ?->id;
     }
 
-    protected function reconnectAccount(Workspace $workspace): ?SocialAccount
+    protected function reconnectAccount(Workspace $workspace, mixed $reconnectId = null): ?SocialAccount
     {
-        $reconnectId = session('social_reconnect_id');
+        $reconnectId ??= session('social_reconnect_id');
 
-        if (! is_string($reconnectId)) {
+        if (! is_string($reconnectId) || $reconnectId === '') {
             return null;
         }
 
@@ -183,6 +183,7 @@ class SocialController extends Controller
 
         try {
             $socialUser = Socialite::driver($driver)->user();
+            $reconnect = $this->reconnectAccount($workspace);
 
             $avatarPath = uploadFromUrl($socialUser->getAvatar());
 
@@ -202,10 +203,12 @@ class SocialController extends Controller
                     'error_message' => null,
                     'disconnected_at' => null,
                 ],
-                $this->reconnectAccount($workspace),
+                $reconnect,
             );
 
-            return $this->popupCallback(true, __('accounts.popup_callback.connected'), $platform->value);
+            return $this->popupCallback(true, $reconnect
+                ? __('accounts.popup_callback.reconnected')
+                : __('accounts.popup_callback.connected'), $platform->value);
         } catch (NetworkAlreadyConnectedException) {
             return $this->popupCallback(false, __('accounts.popup_callback.network_taken'), $platform->value);
         } catch (\Exception $e) {

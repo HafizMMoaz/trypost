@@ -192,6 +192,38 @@ it('reconnects an existing telegram channel', function () {
     )->toBe(1);
 });
 
+it('issues a connect code that carries the reconnect card', function () {
+    $account = SocialAccount::factory()->telegram()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform_user_id' => '-1009999999999',
+    ]);
+
+    $response = $this->actingAs($this->user)
+        ->postJson(route('app.social.telegram.connect', ['reconnect' => $account->id]))
+        ->assertOk();
+
+    expect(data_get(TelegramConnectCode::decode($response->json('code')), 'reconnect_id'))->toBe($account->id);
+});
+
+it('updates the reconnect card when a different channel posts the code', function () {
+    Http::fake();
+    config(['trypost.allow_multiple_social_accounts' => false]);
+
+    $account = SocialAccount::factory()->telegram()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform_user_id' => '-1009999999999',
+    ]);
+
+    $code = TelegramConnectCode::issue($this->workspace->id, now()->addMinutes(15), $account->id);
+
+    $this->withHeader('X-Telegram-Bot-Api-Secret-Token', 'shh-secret')
+        ->postJson(route('telegram.webhook'), telegramUpdate($code))
+        ->assertNoContent();
+
+    expect($this->workspace->socialAccounts()->count())->toBe(1)
+        ->and($account->fresh()->platform_user_id)->toBe('-1001234567890');
+});
+
 it('consumes the code once so it cannot be replayed for another chat', function () {
     Http::fake();
     $code = TelegramConnectCode::issue($this->workspace->id, now()->addMinutes(15));

@@ -382,3 +382,101 @@ test('youtube callback shows network_taken when the network is already connected
 
     expect($this->workspace->socialAccounts()->where('platform', Platform::YouTube)->count())->toBe(1);
 });
+
+test('youtube reconnect keeps the original card for a single channel', function () {
+    $account = SocialAccount::factory()->youtube()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform_user_id' => 'UC_channel_123',
+        'username' => 'old',
+        'access_token' => 'expired-token',
+    ]);
+
+    session([
+        'social_connect_workspace' => $this->workspace->id,
+        'social_reconnect_id' => $account->id,
+    ]);
+
+    $socialiteUser = Mockery::mock(SocialiteUser::class);
+    $socialiteUser->shouldReceive('getId')->andReturn('google_user_123');
+    $socialiteUser->token = 'fresh-access-token';
+    $socialiteUser->refreshToken = 'fresh-refresh-token';
+    $socialiteUser->expiresIn = 3600;
+
+    Socialite::shouldReceive('driver')
+        ->with('google')
+        ->andReturn(Mockery::mock(['user' => $socialiteUser]));
+
+    Http::fake([
+        'https://www.googleapis.com/youtube/v3/channels*' => Http::response([
+            'items' => [
+                [
+                    'id' => 'UC_channel_123',
+                    'snippet' => [
+                        'title' => 'My YouTube Channel',
+                        'customUrl' => '@mychannel',
+                        'thumbnails' => ['default' => ['url' => null]],
+                    ],
+                    'statistics' => ['subscriberCount' => 1000],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.youtube.callback'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('success', true)
+            ->where('message', __('accounts.popup_callback.reconnected'))
+        );
+
+    expect($this->workspace->socialAccounts()->where('platform', Platform::YouTube)->count())->toBe(1)
+        ->and($account->fresh()->access_token)->toBe('fresh-access-token')
+        ->and($account->fresh()->username)->toBe('mychannel');
+});
+
+test('youtube reconnect shows channel_not_found when the channel is missing', function () {
+    $account = SocialAccount::factory()->youtube()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform_user_id' => 'UC_missing',
+    ]);
+
+    session([
+        'social_connect_workspace' => $this->workspace->id,
+        'social_reconnect_id' => $account->id,
+    ]);
+
+    $socialiteUser = Mockery::mock(SocialiteUser::class);
+    $socialiteUser->shouldReceive('getId')->andReturn('google_user_123');
+    $socialiteUser->token = 'test-access-token';
+    $socialiteUser->refreshToken = 'test-refresh-token';
+    $socialiteUser->expiresIn = 3600;
+
+    Socialite::shouldReceive('driver')
+        ->with('google')
+        ->andReturn(Mockery::mock(['user' => $socialiteUser]));
+
+    Http::fake([
+        'https://www.googleapis.com/youtube/v3/channels*' => Http::response([
+            'items' => [
+                [
+                    'id' => 'UC_other',
+                    'snippet' => [
+                        'title' => 'Other Channel',
+                        'customUrl' => '@other',
+                        'thumbnails' => ['default' => ['url' => null]],
+                    ],
+                    'statistics' => ['subscriberCount' => 1],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.youtube.callback'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('success', false)
+            ->where('message', __('accounts.popup_callback.channel_not_found'))
+        );
+});

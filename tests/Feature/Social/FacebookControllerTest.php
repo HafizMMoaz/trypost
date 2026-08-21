@@ -740,3 +740,80 @@ test('facebook reconnect keeps the original card when multiple pages are returne
         ->and($account->access_token)->toBe('fresh-token')
         ->and($account->username)->toBe('page1');
 });
+
+test('facebook reconnect shows page_not_found when the page is missing from graph', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Facebook,
+        'platform_user_id' => 'page_missing',
+    ]);
+
+    session([
+        'social_connect_workspace' => $this->workspace->id,
+        'social_reconnect_id' => $account->id,
+    ]);
+
+    $socialiteUser = Mockery::mock(SocialiteUser::class);
+    $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
+    $socialiteUser->token = 'test-user-token';
+
+    Socialite::shouldReceive('driver')
+        ->with('facebook')
+        ->andReturn(Mockery::mock()->shouldReceive('usingGraphVersion')->andReturnSelf()->shouldReceive('user')->andReturn($socialiteUser)->getMock());
+
+    Http::fake([
+        'https://graph.facebook.com/*/me/accounts*' => Http::response([
+            'data' => [
+                [
+                    'id' => 'page_other',
+                    'name' => 'Other Page',
+                    'username' => 'other',
+                    'picture' => ['data' => ['url' => null]],
+                    'access_token' => 'other-token',
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.facebook.callback'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('success', false)
+            ->where('message', __('accounts.popup_callback.page_not_found'))
+        );
+});
+
+test('facebook select ignores a stored reconnect id from another network', function () {
+    $linkedin = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::LinkedIn,
+        'platform_user_id' => 'linkedin-member',
+    ]);
+
+    session([
+        'social_connect_workspace' => $this->workspace->id,
+        'facebook_oauth' => [
+            'user_token' => 'test-user-token',
+            'user_id' => 'facebook_user_123',
+            'reconnect_id' => $linkedin->id,
+            'pages' => [
+                [
+                    'id' => 'page_123',
+                    'name' => 'My Facebook Page',
+                    'username' => 'mypage',
+                    'picture' => null,
+                    'access_token' => 'page-access-token',
+                ],
+            ],
+        ],
+    ]);
+
+    $this->actingAs($this->user)
+        ->post(route('app.social.facebook.select'), ['page_id' => 'page_123'])
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page->where('success', true));
+
+    expect($linkedin->fresh()->platform)->toBe(Platform::LinkedIn)
+        ->and($this->workspace->socialAccounts()->where('platform', Platform::Facebook)->count())->toBe(1);
+});

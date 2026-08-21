@@ -211,3 +211,52 @@ test('connectIdentity updates the reconnect target even when the identity change
         ->and($updated->platform_user_id)->toBe('ig-b')
         ->and($this->workspace->socialAccounts()->count())->toBe(1);
 });
+
+test('connectIdentity reconnect throws when the new identity is already taken', function () {
+    config()->set('trypost.allow_multiple_social_accounts', true);
+
+    SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Instagram,
+        'platform_user_id' => 'ig-keep',
+    ]);
+
+    $move = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Instagram,
+        'platform_user_id' => 'ig-move',
+    ]);
+
+    expect(fn () => SocialAccount::connectIdentity(
+        $this->workspace,
+        Platform::Instagram,
+        'ig-keep',
+        ['username' => 'taken', 'status' => Status::Connected],
+        $move,
+    ))->toThrow(NetworkAlreadyConnectedException::class);
+});
+
+test('connectIdentity ignores a reconnect target from another network', function () {
+    $facebook = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Facebook,
+        'platform_user_id' => 'page-1',
+    ]);
+
+    $instagram = SocialAccount::connectIdentity(
+        $this->workspace,
+        Platform::Instagram,
+        'ig-new',
+        [
+            'username' => 'fresh',
+            'status' => Status::Connected,
+            'access_token' => 'ig-token',
+        ],
+        $facebook,
+    );
+
+    expect($instagram->id)->not->toBe($facebook->id)
+        ->and($instagram->platform)->toBe(Platform::Instagram)
+        ->and($facebook->fresh()->platform)->toBe(Platform::Facebook)
+        ->and($this->workspace->socialAccounts()->count())->toBe(2);
+});

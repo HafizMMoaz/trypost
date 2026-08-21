@@ -69,6 +69,7 @@ class InstagramController extends SocialController
             // Calculate token expiration (long-lived tokens last 60 days)
             $expiresIn = $socialUser->expiresIn ?? $this->platform->defaultTokenTtlSeconds();
             $tokenExpiresAt = now()->addSeconds($expiresIn);
+            $reconnect = $this->reconnectAccount($workspace);
 
             SocialAccount::connectIdentity(
                 $workspace,
@@ -89,10 +90,12 @@ class InstagramController extends SocialController
                         'account_type' => $socialUser->user['account_type'] ?? null,
                     ],
                 ],
-                $this->reconnectAccount($workspace),
+                $reconnect,
             );
 
-            return $this->popupCallback(true, __('accounts.popup_callback.connected'), $this->platform->value);
+            return $this->popupCallback(true, $reconnect
+                ? __('accounts.popup_callback.reconnected')
+                : __('accounts.popup_callback.connected'), $this->platform->value);
         } catch (NetworkAlreadyConnectedException) {
             return $this->popupCallback(false, __('accounts.popup_callback.network_taken'), $this->platform->value);
         } catch (\Exception $e) {

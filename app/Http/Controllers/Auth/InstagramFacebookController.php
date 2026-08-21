@@ -72,8 +72,7 @@ class InstagramFacebookController extends SocialController
             return $this->popupCallback(false, __('accounts.popup_callback.workspace_not_found'), $this->platform->value);
         }
 
-        $reconnectId = session('social_reconnect_id');
-        $existingAccount = $reconnectId ? $workspace->socialAccounts()->find($reconnectId) : null;
+        $existingAccount = $this->reconnectAccount($workspace);
 
         try {
             $socialUser = Socialite::driver($this->driver)
@@ -112,7 +111,7 @@ class InstagramFacebookController extends SocialController
                 'instagram_facebook_oauth' => [
                     'user_token' => $socialUser->token,
                     'pages' => $pages,
-                    'reconnect_id' => $reconnectId,
+                    'reconnect_id' => $existingAccount?->id,
                 ],
             ]);
 
@@ -173,8 +172,7 @@ class InstagramFacebookController extends SocialController
             return $this->popupCallback(false, __('accounts.popup_callback.workspace_not_found'), $this->platform->value);
         }
 
-        $reconnectId = data_get($oauthData, 'reconnect_id');
-        $existingAccount = $reconnectId ? $workspace->socialAccounts()->find($reconnectId) : null;
+        $existingAccount = $this->reconnectAccount($workspace, data_get($oauthData, 'reconnect_id'));
 
         try {
             $selectedPage = collect(data_get($oauthData, 'pages'))->firstWhere('page_id', $request->page_id);

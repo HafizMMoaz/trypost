@@ -118,7 +118,7 @@ class YouTubeController extends SocialController
                     'refresh_token' => $socialUser->refreshToken,
                     'expires_in' => $socialUser->expiresIn,
                     'user_id' => $socialUser->getId(),
-                    'reconnect_id' => session('social_reconnect_id'),
+                    'reconnect_id' => $this->reconnectAccount($workspace)?->id,
                 ],
             ]);
 
@@ -206,8 +206,7 @@ class YouTubeController extends SocialController
             }
 
             $avatarPath = uploadFromUrl(data_get($selectedChannel, 'thumbnail'));
-            $reconnectId = data_get($oauthData, 'reconnect_id');
-            $reconnect = is_string($reconnectId) ? $workspace->socialAccounts()->find($reconnectId) : null;
+            $reconnect = $this->reconnectAccount($workspace, data_get($oauthData, 'reconnect_id'));
 
             SocialAccount::connectIdentity(
                 $workspace,

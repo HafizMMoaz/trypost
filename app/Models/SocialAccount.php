@@ -8,6 +8,7 @@ use App\Enums\Notification\Channel;
 use App\Enums\Notification\Type;
 use App\Enums\SocialAccount\Platform as SocialPlatform;
 use App\Enums\SocialAccount\Status;
+use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
 use App\Jobs\SendNotification;
 use App\Mail\AccountDisconnected;
 use App\Observers\SocialAccountObserver;
@@ -101,18 +102,26 @@ class SocialAccount extends Model
         array $values,
         ?self $reconnect = null,
     ): self {
+        $values['platform'] = $platform;
         $values['platform_user_id'] = $platformUserId;
-
-        if ($reconnect?->workspace_id === $workspace->id) {
-            $reconnect->update($values);
-
-            return $reconnect;
-        }
 
         $identity = [
             'platform' => $platform->value,
             'platform_user_id' => $platformUserId,
         ];
+
+        if (
+            $reconnect?->workspace_id === $workspace->id
+            && $reconnect->platform->network() === $platform->network()
+        ) {
+            try {
+                $reconnect->update($values);
+
+                return $reconnect;
+            } catch (UniqueConstraintViolationException) {
+                throw new NetworkAlreadyConnectedException($platform);
+            }
+        }
 
         try {
             return $workspace->socialAccounts()->updateOrCreate($identity, $values);

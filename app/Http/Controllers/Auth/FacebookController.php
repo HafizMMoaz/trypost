@@ -135,7 +135,7 @@ class FacebookController extends SocialController
                     'user_token' => $socialUser->token,
                     'user_id' => $socialUser->getId(),
                     'pages' => $pages,
-                    'reconnect_id' => session('social_reconnect_id'),
+                    'reconnect_id' => $this->reconnectAccount($workspace)?->id,
                 ],
             ]);
 
@@ -204,8 +204,7 @@ class FacebookController extends SocialController
             }
 
             $avatarPath = uploadFromUrl(data_get($selectedPage, 'picture'));
-            $reconnectId = data_get($oauthData, 'reconnect_id');
-            $reconnect = is_string($reconnectId) ? $workspace->socialAccounts()->find($reconnectId) : null;
+            $reconnect = $this->reconnectAccount($workspace, data_get($oauthData, 'reconnect_id'));
 
             SocialAccount::connectIdentity(
                 $workspace,

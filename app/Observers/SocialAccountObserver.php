@@ -17,9 +17,9 @@ class SocialAccountObserver
     /**
      * Enforce one connected account per social network per workspace. Variants
      * of the same network (LinkedIn profile/page, Instagram standalone/Facebook)
-     * collapse via Platform::network(). Reconnecting an existing account goes
-     * through updateOrCreate's update path and never reaches this hook. Bypassed
-     * when trypost.allow_multiple_social_accounts is true.
+     * collapse via Platform::network(). Reconnecting an existing account updates
+     * the row and never reaches this hook. Bypassed when
+     * trypost.allow_multiple_social_accounts is true.
      */
     public function creating(SocialAccount $socialAccount): void
     {

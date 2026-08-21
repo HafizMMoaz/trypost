@@ -25,17 +25,22 @@ class ConnectTelegramChannel
      * @return SocialAccount|null The linked account, or null when blocked (account
      *                            limit reached or the code was already consumed).
      */
-    public static function execute(Workspace $workspace, array $chat, string $nonce): ?SocialAccount
+    public static function execute(Workspace $workspace, array $chat, string $nonce, mixed $reconnectId = null): ?SocialAccount
     {
         $chatId = (string) data_get($chat, 'id');
         $username = data_get($chat, 'username');
+        $reconnect = is_string($reconnectId)
+            ? $workspace->socialAccounts()
+                ->whereIn('platform', Platform::Telegram->networkPlatformValues())
+                ->find($reconnectId)
+            : null;
 
         $isNewAccount = ! $workspace->socialAccounts()
             ->where('platform', Platform::Telegram->value)
             ->where('platform_user_id', $chatId)
             ->exists();
 
-        if ($isNewAccount && SocialAccount::occupiesNetwork((string) $workspace->id, Platform::Telegram)) {
+        if ($reconnect === null && $isNewAccount && SocialAccount::occupiesNetwork((string) $workspace->id, Platform::Telegram)) {
             TelegramConnectFailed::dispatch($workspace->id, $nonce, 'network_taken');
 
             return null;
@@ -69,6 +74,7 @@ class ConnectTelegramChannel
                         'connect_nonce' => $nonce,
                     ],
                 ],
+                $reconnect,
             );
         } catch (NetworkAlreadyConnectedException) {
             TelegramConnectFailed::dispatch($workspace->id, $nonce, 'network_taken');

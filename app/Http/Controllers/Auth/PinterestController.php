@@ -58,6 +58,7 @@ class PinterestController extends SocialController
             $socialUser = Socialite::driver($this->driver)->user();
 
             $avatarPath = uploadFromUrl($socialUser->getAvatar());
+            $reconnect = $this->reconnectAccount($workspace);
 
             SocialAccount::connectIdentity(
                 $workspace,
@@ -76,10 +77,12 @@ class PinterestController extends SocialController
                     'error_message' => null,
                     'disconnected_at' => null,
                 ],
-                $this->reconnectAccount($workspace),
+                $reconnect,
             );
 
-            return $this->popupCallback(true, __('accounts.popup_callback.connected'), $this->platform->value);
+            return $this->popupCallback(true, $reconnect
+                ? __('accounts.popup_callback.reconnected')
+                : __('accounts.popup_callback.connected'), $this->platform->value);
         } catch (NetworkAlreadyConnectedException) {
             return $this->popupCallback(false, __('accounts.popup_callback.network_taken'), $this->platform->value);
         } catch (\Exception $e) {

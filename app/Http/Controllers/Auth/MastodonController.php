@@ -181,6 +181,7 @@ class MastodonController extends SocialController
             // verify required scopes (write:statuses, write:media) before
             // attempting to post.
             $grantedScopes = array_values(array_filter(explode(' ', (string) data_get($tokenData, 'scope', self::SCOPES))));
+            $reconnect = $this->reconnectAccount($workspace);
 
             SocialAccount::connectIdentity(
                 $workspace,
@@ -203,12 +204,14 @@ class MastodonController extends SocialController
                         'client_secret' => $clientSecret,
                     ],
                 ],
-                $this->reconnectAccount($workspace),
+                $reconnect,
             );
 
             $this->clearMastodonSession();
 
-            return $this->popupCallback(true, __('accounts.popup_callback.connected'), $this->platform->value);
+            return $this->popupCallback(true, $reconnect
+                ? __('accounts.popup_callback.reconnected')
+                : __('accounts.popup_callback.connected'), $this->platform->value);
         } catch (NetworkAlreadyConnectedException) {
             $this->clearMastodonSession();
 

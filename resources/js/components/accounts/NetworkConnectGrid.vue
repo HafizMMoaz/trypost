@@ -50,6 +50,7 @@ const props = withDefaults(
 );
 
 const telegramOpen = ref(false);
+const telegramReconnectId = ref<string>();
 const instagramOpen = ref(false);
 const disconnectModal = ref<InstanceType<typeof ConfirmDeleteModal> | null>(null);
 
@@ -70,6 +71,7 @@ const startConnect = (platform: string, reconnectId?: string) => {
     const entry = connectEntry(platform);
 
     if (entry === Platform.Telegram) {
+        telegramReconnectId.value = reconnectId;
         telegramOpen.value = true;
         return;
     }
@@ -250,7 +252,10 @@ const cards = computed(() => {
             </div>
         </div>
 
-        <TelegramConnectDialog v-model:open="telegramOpen" />
+        <TelegramConnectDialog
+            v-model:open="telegramOpen"
+            :reconnect-id="telegramReconnectId"
+        />
 
         <InstagramConnectDialog
             v-model:open="instagramOpen"

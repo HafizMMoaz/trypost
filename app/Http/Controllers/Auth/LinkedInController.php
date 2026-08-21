@@ -115,9 +115,26 @@ class LinkedInController extends SocialController
             return $this->popupCallback(false, __('accounts.popup_callback.workspace_not_found'), $this->platform->value);
         }
 
+        $person = $this->personEnabled() ? $pending['person'] : null;
+        $organizations = $pending['organizations'];
+        $reconnect = $this->reconnectAccount($workspace);
+
+        if ($reconnect !== null) {
+            $target = (string) $reconnect->platform_user_id;
+            $person = (string) data_get($person, 'id') === $target ? $person : null;
+            $organizations = collect($organizations)
+                ->filter(fn (mixed $organization): bool => (string) data_get($organization, 'id') === $target)
+                ->values()
+                ->all();
+
+            if ($person === null && $organizations === []) {
+                return $this->popupCallback(false, __('accounts.popup_callback.page_not_found'), $this->platform->value);
+            }
+        }
+
         return Inertia::render('accounts/LinkedInSelect', [
-            'person' => $this->personEnabled() ? $pending['person'] : null,
-            'organizations' => $pending['organizations'],
+            'person' => $person,
+            'organizations' => $organizations,
         ]);
     }
 
@@ -153,6 +170,8 @@ class LinkedInController extends SocialController
             return $this->popupCallback(false, __('accounts.popup_callback.error_connecting'), $this->platform->value);
         }
 
+        $reconnect = $this->reconnectAccount($workspace);
+
         try {
             if ($type === LinkedInIdentityType::Organization) {
                 $organization = $this->resolveAdministeredOrganization($pending, data_get($validated, 'organization_id'));
@@ -161,14 +180,24 @@ class LinkedInController extends SocialController
                     return $this->popupCallback(false, __('accounts.popup_callback.error_connecting'), $this->platform->value);
                 }
 
+                if ($reconnect !== null && (string) data_get($organization, 'id') !== (string) $reconnect->platform_user_id) {
+                    return $this->popupCallback(false, __('accounts.popup_callback.page_not_found'), $this->platform->value);
+                }
+
                 $this->connectOrganization($workspace, $pending, $organization);
             } else {
+                if ($reconnect !== null && (string) data_get($pending, 'person.id') !== (string) $reconnect->platform_user_id) {
+                    return $this->popupCallback(false, __('accounts.popup_callback.page_not_found'), $this->platform->value);
+                }
+
                 $this->connectPerson($workspace, $pending);
             }
 
             session()->forget('linkedin_pending');
 
-            return $this->popupCallback(true, __('accounts.popup_callback.connected'), $this->platform->value);
+            return $this->popupCallback(true, $this->reconnectAccount($workspace)
+                ? __('accounts.popup_callback.reconnected')
+                : __('accounts.popup_callback.connected'), $this->platform->value);
         } catch (NetworkAlreadyConnectedException) {
             return $this->popupCallback(false, __('accounts.popup_callback.network_taken'), $this->platform->value);
         } catch (\Exception $e) {
@@ -204,7 +233,7 @@ class LinkedInController extends SocialController
                 'error_message' => null,
                 'disconnected_at' => null,
             ],
-            $reconnect?->platform === SocialPlatform::LinkedIn ? $reconnect : null,
+            $reconnect,
         );
     }
 
@@ -257,7 +286,7 @@ class LinkedInController extends SocialController
                     'admin_name' => data_get($pending, 'person.name'),
                 ],
             ],
-            $reconnect?->platform === SocialPlatform::LinkedInPage ? $reconnect : null,
+            $reconnect,
         );
     }
 
