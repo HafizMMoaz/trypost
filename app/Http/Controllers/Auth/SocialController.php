@@ -127,37 +127,27 @@ class SocialController extends Controller
     }
 
     /**
-     * Keep the reconnect target when one is set; otherwise hide identities the
-     * workspace already occupies unless multiple accounts are allowed.
-     *
      * @param  array<int, array<string, mixed>>  $identities
      * @return array<int, array<string, mixed>>
      */
     protected function filterConnectableIdentities(Workspace $workspace, array $identities, string $idKey): array
     {
-        $reconnect = $this->reconnectAccount($workspace);
+        $byId = collect($identities)->keyBy(fn (array $identity) => (string) data_get($identity, $idKey));
 
-        if ($reconnect !== null) {
-            return array_values(array_filter(
-                $identities,
-                fn (array $identity): bool => (string) data_get($identity, $idKey) === (string) $reconnect->platform_user_id,
-            ));
+        if ($reconnect = $this->reconnectAccount($workspace)) {
+            return $byId->only([(string) $reconnect->platform_user_id])->values()->all();
         }
 
         if (config('trypost.allow_multiple_social_accounts')) {
             return $identities;
         }
 
-        $taken = $workspace->socialAccounts()
-            ->whereIn('platform', $this->platform->networkPlatformValues())
-            ->pluck('platform_user_id')
-            ->map(fn (mixed $id): string => (string) $id)
-            ->all();
-
-        return array_values(array_filter(
-            $identities,
-            fn (array $identity): bool => ! in_array((string) data_get($identity, $idKey), $taken, true),
-        ));
+        return $byId->except(
+            $workspace->socialAccounts()
+                ->whereIn('platform', $this->platform->networkPlatformValues())
+                ->pluck('platform_user_id')
+                ->map(strval(...)),
+        )->values()->all();
     }
 
     protected function redirectToProvider(Request $request, string $driver, array $scopes): SymfonyResponse
