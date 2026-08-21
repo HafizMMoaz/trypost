@@ -54,8 +54,8 @@ class ThreadsController extends SocialController
     public function callback(Request $request): InertiaResponse
     {
         $savedState = session('threads_oauth_state');
-        $workspace = $this->connectWorkspace($request);
         session()->forget('threads_oauth_state');
+        $workspace = $this->connectWorkspace($request);
 
         if ($request->state !== $savedState) {
             throw new ConnectPopupException('invalid_state', $this->platform);
@@ -138,18 +138,18 @@ class ThreadsController extends SocialController
                 $reconnect,
             );
 
-            session()->forget(['threads_oauth_state', 'social_reconnect_id']);
+            session()->forget('threads_oauth_state');
 
             return $this->connectedCallback($reconnect);
-        } catch (NetworkAlreadyConnectedException) {
-            return $this->popupCallback(false, __('accounts.popup_callback.network_taken'), $this->platform->value);
+        } catch (NetworkAlreadyConnectedException $e) {
+            return $this->popupCallback(false, __("accounts.popup_callback.{$e->messageKey}"), $this->platform->value);
         } catch (\Exception $e) {
             Log::error('Threads OAuth Error', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            session()->forget(['threads_oauth_state', 'social_reconnect_id']);
+            session()->forget('threads_oauth_state');
 
             return $this->popupCallback(false, __('accounts.popup_callback.error_connecting'), $this->platform->value);
         }

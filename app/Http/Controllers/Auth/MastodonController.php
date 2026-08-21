@@ -126,8 +126,8 @@ class MastodonController extends SocialController
 
         // Everything the flow still needs is captured above, so the session can
         // go now and every exit below is free of cleanup.
-        $workspace = $this->connectWorkspace($request);
         $this->clearMastodonSession();
+        $workspace = $this->connectWorkspace($request);
 
         if ($request->state !== $savedState) {
             throw new ConnectPopupException('invalid_state', $this->platform);
@@ -202,8 +202,8 @@ class MastodonController extends SocialController
             );
 
             return $this->connectedCallback($reconnect);
-        } catch (NetworkAlreadyConnectedException) {
-            return $this->popupCallback(false, __('accounts.popup_callback.network_taken'), $this->platform->value);
+        } catch (NetworkAlreadyConnectedException $e) {
+            return $this->popupCallback(false, __("accounts.popup_callback.{$e->messageKey}"), $this->platform->value);
         } catch (\Exception $e) {
             Log::error('Mastodon callback error', [
                 'error' => $e->getMessage(),
@@ -214,6 +214,10 @@ class MastodonController extends SocialController
         }
     }
 
+    /**
+     * Only the Mastodon-specific keys: the shared connect session is cleared by
+     * whatever closes the popup.
+     */
     private function clearMastodonSession(): void
     {
         session()->forget([
@@ -221,7 +225,6 @@ class MastodonController extends SocialController
             'mastodon_client_id',
             'mastodon_client_secret',
             'mastodon_oauth_state',
-            'social_connect_workspace',
         ]);
     }
 }

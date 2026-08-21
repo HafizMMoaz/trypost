@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Exceptions\SocialAccount;
 
 use App\Enums\SocialAccount\Platform;
+use Illuminate\Contracts\Debug\ShouldntReport;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -15,8 +16,11 @@ use RuntimeException;
  *
  * Rendering lives on the exception so the session and permission guards that
  * open every connect action stay a single line instead of six.
+ *
+ * An expired popup session is a normal outcome, not an incident, so this never
+ * reaches the error log.
  */
-class ConnectPopupException extends RuntimeException
+class ConnectPopupException extends RuntimeException implements ShouldntReport
 {
     public function __construct(
         public readonly string $messageKey,
