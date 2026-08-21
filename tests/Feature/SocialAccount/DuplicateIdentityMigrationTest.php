@@ -149,6 +149,46 @@ test('it keeps the published row when collapsing repeated post targets', functio
     expect(PostPlatform::where('post_id', $post->id)->pluck('id')->all())->toBe([$published->id]);
 });
 
+test('it keeps the enabled row when collapsing repeated post targets', function () {
+    $older = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Pinterest,
+        'platform_user_id' => 'pin-1',
+        'created_at' => now()->subDay(),
+    ]);
+
+    $newer = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Pinterest,
+        'platform_user_id' => 'pin-1',
+        'created_at' => now(),
+    ]);
+
+    $post = Post::factory()->create(['workspace_id' => $this->workspace->id]);
+
+    // SyncPostPlatforms seeds a disabled row for every account, so the enabled
+    // one is not necessarily the newest.
+    $enabled = PostPlatform::factory()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $older->id,
+        'platform' => Platform::Pinterest,
+        'status' => PostPlatformStatus::Pending,
+        'enabled' => true,
+    ]);
+
+    PostPlatform::factory()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $newer->id,
+        'platform' => Platform::Pinterest,
+        'status' => PostPlatformStatus::Pending,
+        'enabled' => false,
+    ]);
+
+    $this->migration->up();
+
+    expect(PostPlatform::where('post_id', $post->id)->pluck('id')->all())->toBe([$enabled->id]);
+});
+
 test('it leaves distinct identities untouched', function () {
     $first = SocialAccount::factory()->create([
         'workspace_id' => $this->workspace->id,

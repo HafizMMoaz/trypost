@@ -74,6 +74,13 @@ return new class extends Migration
      * A post could hold one row per duplicate account. Once they all point at
      * the surviving account the post would publish to it once per row, so keep
      * the most meaningful row per post and drop the rest.
+     *
+     * Published beats everything because that history cannot be rebuilt, then
+     * enabled beats disabled: SyncPostPlatforms seeds a disabled row for every
+     * account in the workspace, so the usual duplicate is one row the user
+     * actually checked next to one they never saw, both pending and created in
+     * the same second. Keeping the disabled one would silently stop a scheduled
+     * post from reaching that account.
      */
     private function dropRepeatedPostTargets(string $keepId): void
     {
@@ -89,6 +96,7 @@ return new class extends Migration
                 ->where('social_account_id', $keepId)
                 ->where('post_id', $postId)
                 ->orderByRaw("case when status = 'published' then 0 else 1 end")
+                ->orderByRaw('case when enabled then 0 else 1 end')
                 ->orderByDesc('created_at')
                 ->pluck('id')
                 ->all();

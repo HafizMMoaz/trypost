@@ -116,8 +116,10 @@ interface ConnectCard {
     extra: boolean;
 }
 
+const page = usePage();
+
 const cards = computed<ConnectCard[]>(() => {
-    const allowMultiple = Boolean(usePage().props.allowMultipleSocialAccounts);
+    const allowMultiple = Boolean(page.props.allowMultipleSocialAccounts);
 
     return props.platforms.flatMap((platform) => {
         const accounts = props.connectedAccounts.filter((account) => account.network === platform.network);

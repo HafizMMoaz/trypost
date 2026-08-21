@@ -91,6 +91,15 @@ class LinkedInController extends SocialController
         }
     }
 
+    /**
+     * Render the identity picker.
+     *
+     * The pending payload carries its own workspace, so the picker survives a
+     * cleared connect session where connectWorkspace() would not. The profile
+     * and the pages are one pool of LinkedIn identities: they go through the
+     * shared filter together and are split again for the view, and only the
+     * filter emptying the pool counts as the network being taken.
+     */
     public function selectIdentity(Request $request): InertiaResponse
     {
         $pending = session('linkedin_pending');
@@ -99,16 +108,12 @@ class LinkedInController extends SocialController
             return $this->popupCallback(false, __('accounts.popup_callback.session_expired'), $this->platform->value);
         }
 
-        // The pending payload carries its own workspace so the picker survives a
-        // cleared connect session; connectWorkspace() is for session-driven flows.
         $workspace = Workspace::find($pending['workspace_id']);
 
         if (! $workspace || ! $request->user()->can('manageAccounts', $workspace)) {
             return $this->popupCallback(false, __('accounts.popup_callback.workspace_not_found'), $this->platform->value);
         }
 
-        // The profile and the pages are one pool of LinkedIn identities, so they
-        // go through the shared filter together and are split again for the view.
         $identities = array_values(array_filter([
             $this->personEnabled() ? $pending['person'] : null,
             ...$pending['organizations'],
@@ -117,12 +122,14 @@ class LinkedInController extends SocialController
         $reconnect = $this->reconnectAccount($workspace);
         $connectable = collect($this->filterConnectableIdentities($workspace, $identities, 'id', $reconnect));
 
-        // Only filtering counts as "nothing left to take". An empty pool means
-        // LinkedIn had nothing to offer, which the picker explains itself.
         if ($identities !== [] && $connectable->isEmpty()) {
             session()->forget('linkedin_pending');
 
             return $this->noConnectableIdentities($reconnect, 'page_not_found');
+        }
+
+        if ($connectable->isEmpty()) {
+            session()->forget('linkedin_pending');
         }
 
         $personId = (string) data_get($pending, 'person.id');
@@ -153,8 +160,6 @@ class LinkedInController extends SocialController
             return $this->popupCallback(false, __('accounts.popup_callback.session_expired'), $this->platform->value);
         }
 
-        // The pending payload carries its own workspace so the picker survives a
-        // cleared connect session; connectWorkspace() is for session-driven flows.
         $workspace = Workspace::find($pending['workspace_id']);
 
         if (! $workspace || ! $request->user()->can('manageAccounts', $workspace)) {

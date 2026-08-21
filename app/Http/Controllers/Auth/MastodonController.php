@@ -111,6 +111,10 @@ class MastodonController extends SocialController
     /**
      * Handle OAuth callback
      */
+    /**
+     * Everything the flow needs is captured into locals before the session is
+     * cleared, so every exit below is free of cleanup.
+     */
     public function callback(Request $request): InertiaResponse
     {
         $savedState = session('mastodon_oauth_state');
@@ -124,8 +128,6 @@ class MastodonController extends SocialController
             throw new ConnectPopupException('session_expired', $this->platform);
         }
 
-        // Everything the flow still needs is captured above, so the session can
-        // go now and every exit below is free of cleanup.
         $this->clearMastodonSession();
         $workspace = $this->connectWorkspace($request);
 
