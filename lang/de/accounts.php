@@ -7,6 +7,7 @@ return [
     'page_title' => 'Social-Media-Konten',
     'description' => 'Übersicht über alle deine verbundenen Social-Media-Konten',
     'connect_cta' => 'Verbinden',
+    'connect_another' => 'Weitere verbinden',
 
     'not_connected' => 'Nicht verbunden',
     'connect' => 'Verbinden',

@@ -5,6 +5,7 @@ return [
     'page_title' => '社交账号',
     'description' => '查看你所有已连接的社交账号',
     'connect_cta' => '连接',
+    'connect_another' => '连接另一个',
 
     'not_connected' => '未连接',
     'connect' => '连接',

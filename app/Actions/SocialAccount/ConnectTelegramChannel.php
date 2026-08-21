@@ -105,7 +105,7 @@ class ConnectTelegramChannel
 
     private static function networkAlreadyConnected(Workspace $workspace, string $chatId): bool
     {
-        if (config('trypost.self_hosted')) {
+        if (config('trypost.allow_multiple_social_accounts')) {
             return false;
         }
 

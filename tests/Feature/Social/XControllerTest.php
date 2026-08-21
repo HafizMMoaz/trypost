@@ -85,8 +85,8 @@ test('x callback fails with expired session', function () {
     $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'Session expired. Please try again.'));
 });
 
-test('user can connect multiple x accounts in self-hosted mode', function () {
-    config()->set('trypost.self_hosted', true);
+test('user can connect multiple x accounts when multiple social accounts are allowed', function () {
+    config()->set('trypost.allow_multiple_social_accounts', true);
 
     SocialAccount::factory()->x()->create([
         'workspace_id' => $this->workspace->id,

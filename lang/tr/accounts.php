@@ -7,6 +7,7 @@ return [
     'page_title' => 'Sosyal Hesaplar',
     'description' => 'Bağlı tüm sosyal hesaplarınıza genel bakış',
     'connect_cta' => 'Bağla',
+    'connect_another' => 'Başka birini bağla',
 
     'not_connected' => 'Bağlı değil',
     'connect' => 'Bağla',

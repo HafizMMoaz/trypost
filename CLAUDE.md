@@ -244,6 +244,16 @@ Standing constraints:
 - Coupon qualification stays: card required, exactly one workspace, no prior real subscription (`incomplete` / `incomplete_expired` still qualify).
 - Prefer documenting durable billing decisions here (and in `AGENTS.md`) — do **not** create a `.ai/` rules folder for this project.
 
+## Multiple social accounts per network
+
+One connected identity per social network per workspace is the Cloud default. This is **not** tied to `SELF_HOSTED` — Cloud cannot flip that flag, but it can flip this one.
+
+| Env | Config | Default | Effect |
+| --- | --- | --- | --- |
+| `ALLOW_MULTIPLE_SOCIAL_ACCOUNTS` | `trypost.allow_multiple_social_accounts` | `false` | `true`: a workspace may connect more than one account of the same network (two LinkedIns, two Instagrams, …). `false`: one per network (LinkedIn profile + page count as one; Instagram standalone + Instagram-via-Facebook count as one). Reconnecting the same `platform` + `platform_user_id` still updates the existing row. Shared to Inertia as `allowMultipleSocialAccounts`. |
+
+Self-hosted compose / `.env.example` set this `true`. Do **not** use `selfHosted` for this check (observer, Telegram connect, `NetworkConnectGrid`).
+
 ## Icons (@tabler/icons-vue)
 
 - This project uses `@tabler/icons-vue` for all icons. NEVER use `lucide-vue-next`.

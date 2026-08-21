@@ -49,7 +49,9 @@ const props = withDefaults(
     },
 );
 
-const selfHosted = computed(() => Boolean(usePage().props.selfHosted));
+const allowMultipleSocialAccounts = computed(() =>
+    Boolean(usePage().props.allowMultipleSocialAccounts),
+);
 
 const getPlatformDescription = (platform: string): string =>
     trans(`accounts.descriptions.${platform}`);
@@ -218,8 +220,8 @@ interface GridCard {
 }
 
 // One card per connected account, plus a standing "connect" card per network:
-// always when nothing is connected yet, and additionally (self-hosted only,
-// via the shared Inertia selfHosted prop) alongside existing connections so
+// always when nothing is connected yet, and additionally (when
+// allowMultipleSocialAccounts is on) alongside existing connections so
 // another identity can be added instead of the network staying locked at one.
 const cards = computed((): GridCard[] => {
     const result: GridCard[] = [];
@@ -228,7 +230,7 @@ const cards = computed((): GridCard[] => {
         const accountsForNetwork = props.connectedAccounts.filter(
             (account) => account.network === platform.network,
         );
-        const visibleAccounts = selfHosted.value
+        const visibleAccounts = allowMultipleSocialAccounts.value
             ? accountsForNetwork
             : accountsForNetwork.slice(0, 1);
 
@@ -244,7 +246,7 @@ const cards = computed((): GridCard[] => {
             });
         }
 
-        if (visibleAccounts.length === 0 || selfHosted.value) {
+        if (visibleAccounts.length === 0 || allowMultipleSocialAccounts.value) {
             result.push({
                 key: `${platform.value}-connect`,
                 platform,
@@ -357,7 +359,7 @@ const cards = computed((): GridCard[] => {
                 >
                     {{
                         card.isAdditional
-                            ? $t('accounts.connect_another_cta')
+                            ? $t('accounts.connect_another')
                             : $t('accounts.connect_cta')
                     }}
                 </Button>

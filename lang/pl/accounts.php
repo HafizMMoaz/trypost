@@ -5,6 +5,7 @@ return [
     'page_title' => 'Konta społecznościowe',
     'description' => 'Przegląd wszystkich Twoich połączonych kont społecznościowych',
     'connect_cta' => 'Połącz',
+    'connect_another' => 'Połącz kolejne',
 
     'not_connected' => 'Niepołączone',
     'connect' => 'Połącz',

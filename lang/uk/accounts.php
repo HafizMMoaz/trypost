@@ -5,6 +5,7 @@ return [
     'page_title' => 'Соціальні акаунти',
     'description' => 'Огляд усіх підключених соціальних акаунтів',
     'connect_cta' => 'Підключити',
+    'connect_another' => 'Підключити ще',
 
     'not_connected' => 'Не підключено',
     'connect' => 'Підключити',

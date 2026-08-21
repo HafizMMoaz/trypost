@@ -5,6 +5,7 @@ return [
     'page_title' => '소셜 계정',
     'description' => '연결된 모든 소셜 계정 개요',
     'connect_cta' => '연결',
+    'connect_another' => '다른 계정 연결',
 
     'not_connected' => '연결 안 됨',
     'connect' => '연결',

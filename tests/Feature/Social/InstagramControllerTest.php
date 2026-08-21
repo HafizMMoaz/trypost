@@ -83,8 +83,8 @@ test('instagram callback fails with expired session', function () {
     $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'Session expired. Please try again.'));
 });
 
-test('user can connect multiple instagram accounts in self-hosted mode', function () {
-    config()->set('trypost.self_hosted', true);
+test('user can connect multiple instagram accounts when multiple social accounts are allowed', function () {
+    config()->set('trypost.allow_multiple_social_accounts', true);
 
     SocialAccount::factory()->create([
         'workspace_id' => $this->workspace->id,
@@ -122,7 +122,7 @@ test('user can connect multiple instagram accounts in self-hosted mode', functio
 });
 
 test('instagram callback shows network_taken when the network is already connected', function () {
-    config()->set('trypost.self_hosted', false);
+    config()->set('trypost.allow_multiple_social_accounts', false);
 
     SocialAccount::factory()->create([
         'workspace_id' => $this->workspace->id,

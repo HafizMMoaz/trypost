@@ -5,6 +5,7 @@ return [
     'page_title' => 'Social accounts',
     'description' => 'Overzicht van al je gekoppelde social accounts',
     'connect_cta' => 'Koppelen',
+    'connect_another' => 'Nog een koppelen',
 
     'not_connected' => 'Niet gekoppeld',
     'connect' => 'Koppelen',

@@ -20,11 +20,11 @@ class SocialAccountObserver
      * of the same network (LinkedIn profile/page, Instagram standalone/Facebook)
      * collapse via Platform::network(). Reconnecting an existing account goes
      * through updateOrCreate's update path and never reaches this hook. Bypassed
-     * in self-hosted mode, which has no per-workspace limits.
+     * when trypost.allow_multiple_social_accounts is true.
      */
     public function creating(SocialAccount $socialAccount): void
     {
-        if (config('trypost.self_hosted') || ! $socialAccount->platform instanceof Platform) {
+        if (config('trypost.allow_multiple_social_accounts') || ! $socialAccount->platform instanceof Platform) {
             return;
         }
 

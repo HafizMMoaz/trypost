@@ -5,6 +5,7 @@ return [
     'page_title' => 'الحسابات الاجتماعية',
     'description' => 'نظرة عامة على جميع حساباتك الاجتماعية المتصلة',
     'connect_cta' => 'ربط',
+    'connect_another' => 'ربط حساب آخر',
 
     'not_connected' => 'غير متصل',
     'connect' => 'ربط',

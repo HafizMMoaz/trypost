@@ -10,6 +10,7 @@ use App\Models\Workspace;
 
 beforeEach(function () {
     config()->set('trypost.self_hosted', false);
+    config()->set('trypost.allow_multiple_social_accounts', false);
     $this->workspace = Workspace::factory()->create();
 });
 
@@ -92,8 +93,8 @@ test('reconnecting the same account via updateOrCreate is allowed', function () 
         ->and($this->workspace->socialAccounts()->first()->username)->toBe('new');
 });
 
-test('self-hosted mode bypasses the one-per-network rule', function () {
-    config()->set('trypost.self_hosted', true);
+test('allowing multiple social accounts bypasses the one-per-network rule', function () {
+    config()->set('trypost.allow_multiple_social_accounts', true);
 
     SocialAccount::factory()->create([
         'workspace_id' => $this->workspace->id,
@@ -108,6 +109,42 @@ test('self-hosted mode bypasses the one-per-network rule', function () {
     ]);
 
     expect($second->exists)->toBeTrue();
+});
+
+test('multiple social accounts can be enabled without self-hosted mode', function () {
+    config()->set('trypost.self_hosted', false);
+    config()->set('trypost.allow_multiple_social_accounts', true);
+
+    SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Instagram,
+        'platform_user_id' => 'ig-a',
+    ]);
+
+    $second = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Instagram,
+        'platform_user_id' => 'ig-b',
+    ]);
+
+    expect($second->exists)->toBeTrue();
+});
+
+test('self-hosted still enforces one-per-network when multiple social accounts are disabled', function () {
+    config()->set('trypost.self_hosted', true);
+    config()->set('trypost.allow_multiple_social_accounts', false);
+
+    SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Instagram,
+        'platform_user_id' => 'ig-a',
+    ]);
+
+    expect(fn () => SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Instagram,
+        'platform_user_id' => 'ig-b',
+    ]))->toThrow(NetworkAlreadyConnectedException::class);
 });
 
 test('blocks a same-id account connected via a different network variant', function () {

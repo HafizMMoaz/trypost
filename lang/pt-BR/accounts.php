@@ -5,6 +5,7 @@ return [
     'page_title' => 'Contas Sociais',
     'description' => 'Visão geral de todas as suas contas sociais conectadas',
     'connect_cta' => 'Conectar',
+    'connect_another' => 'Conectar outra',
 
     'not_connected' => 'Não conectado',
     'connect' => 'Conectar',

@@ -5,6 +5,7 @@ return [
     'page_title' => 'ソーシャルアカウント',
     'description' => '接続済みのソーシャルアカウントの一覧',
     'connect_cta' => '接続',
+    'connect_another' => '別のアカウントを接続',
 
     'not_connected' => '未接続',
     'connect' => '接続',

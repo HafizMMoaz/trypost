@@ -86,7 +86,7 @@ test('facebook oauth callback creates account with single page', function () {
 });
 
 test('facebook callback shows network_taken when the network is already connected', function () {
-    config()->set('trypost.self_hosted', false);
+    config()->set('trypost.allow_multiple_social_accounts', false);
 
     SocialAccount::factory()->create([
         'workspace_id' => $this->workspace->id,
@@ -388,8 +388,8 @@ test('facebook callback fails with expired session', function () {
     $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'Session expired. Please try again.'));
 });
 
-test('user can connect multiple facebook accounts in self-hosted mode', function () {
-    config(['trypost.self_hosted' => true]);
+test('user can connect multiple facebook accounts when multiple social accounts are allowed', function () {
+    config(['trypost.allow_multiple_social_accounts' => true]);
 
     SocialAccount::factory()->facebook()->create([
         'workspace_id' => $this->workspace->id,
