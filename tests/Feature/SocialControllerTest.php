@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Enums\Post\Status;
 use App\Enums\SocialAccount\Platform;
 use App\Enums\UserWorkspace\Role;
-use App\Models\Account;
 use App\Models\Post;
 use App\Models\PostPlatform;
 use App\Models\SocialAccount;
@@ -41,36 +40,6 @@ test('accounts index shows platforms and connected accounts', function () {
         ->has('platforms')
         ->has('platforms.0.network')
         ->has('connectedAccounts', 1)
-        ->has('selfHosted')
-    );
-});
-
-test('accounts index reports self-hosted mode so the UI can offer multiple connections per network', function () {
-    config()->set('trypost.self_hosted', true);
-
-    $response = $this->actingAs($this->user)->get(route('app.accounts'));
-
-    $response->assertInertia(fn ($page) => $page
-        ->component('accounts/Index', false)
-        ->where('selfHosted', true)
-    );
-});
-
-test('accounts index reports hosted mode', function () {
-    config()->set('trypost.self_hosted', false);
-
-    $this->user->account->subscriptions()->create([
-        'type' => Account::SUBSCRIPTION_NAME,
-        'stripe_id' => 'sub_test_'.fake()->uuid(),
-        'stripe_status' => 'active',
-        'stripe_price' => 'price_123',
-    ]);
-
-    $response = $this->actingAs($this->user)->get(route('app.accounts'));
-
-    $response->assertInertia(fn ($page) => $page
-        ->component('accounts/Index', false)
-        ->where('selfHosted', false)
     );
 });
 

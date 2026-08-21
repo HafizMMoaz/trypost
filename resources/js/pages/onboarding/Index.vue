@@ -37,7 +37,6 @@ const props = defineProps<{
     mcpUrl: string;
     platforms: AvailablePlatform[];
     accounts: ConnectedAccount[];
-    selfHosted: boolean;
 }>();
 
 const page = usePage();
@@ -169,7 +168,6 @@ const isStepSkipped = (step: string): boolean =>
                         v-else-if="canManageAccounts"
                         :platforms="platforms"
                         :connected-accounts="accounts"
-                        :self-hosted="selfHosted"
                         grid-class="grid-cols-2 sm:grid-cols-3 xl:grid-cols-5"
                         data-testid="onboarding-social-controls"
                     />

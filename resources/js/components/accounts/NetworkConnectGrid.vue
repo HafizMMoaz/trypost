@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { router } from '@inertiajs/vue3';
+import { router, usePage } from '@inertiajs/vue3';
 import { IconAlertTriangle, IconCheck } from '@tabler/icons-vue';
 import { trans } from 'laravel-vue-i18n';
 import { computed, ref } from 'vue';
@@ -42,14 +42,14 @@ const props = withDefaults(
         platforms: AvailablePlatform[];
         connectedAccounts?: ConnectedAccount[];
         gridClass?: string;
-        selfHosted?: boolean;
     }>(),
     {
         connectedAccounts: () => [],
         gridClass: 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5',
-        selfHosted: false,
     },
 );
+
+const selfHosted = computed(() => Boolean(usePage().props.selfHosted));
 
 const getPlatformDescription = (platform: string): string =>
     trans(`accounts.descriptions.${platform}`);
@@ -219,9 +219,8 @@ interface GridCard {
 
 // One card per connected account, plus a standing "connect" card per network:
 // always when nothing is connected yet, and additionally (self-hosted only,
-// where the backend has no one-account-per-network limit) alongside existing
-// connections so another identity - a second LinkedIn page, another Instagram
-// account, etc. - can be added instead of the network staying locked at one.
+// via the shared Inertia selfHosted prop) alongside existing connections so
+// another identity can be added instead of the network staying locked at one.
 const cards = computed((): GridCard[] => {
     const result: GridCard[] = [];
 
@@ -229,7 +228,7 @@ const cards = computed((): GridCard[] => {
         const accountsForNetwork = props.connectedAccounts.filter(
             (account) => account.network === platform.network,
         );
-        const visibleAccounts = props.selfHosted
+        const visibleAccounts = selfHosted.value
             ? accountsForNetwork
             : accountsForNetwork.slice(0, 1);
 
@@ -245,7 +244,7 @@ const cards = computed((): GridCard[] => {
             });
         }
 
-        if (visibleAccounts.length === 0 || props.selfHosted) {
+        if (visibleAccounts.length === 0 || selfHosted.value) {
             result.push({
                 key: `${platform.value}-connect`,
                 platform,
