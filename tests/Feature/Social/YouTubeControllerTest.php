@@ -413,3 +413,104 @@ test('youtube reconnect shows channel_not_found when the channel is missing', fu
             ->where('message', __('accounts.popup_callback.channel_not_found'))
         );
 });
+
+test('youtube reconnect narrows a multi channel response to its own card', function () {
+    $account = SocialAccount::factory()->youtube()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform_user_id' => 'UC_target',
+        'username' => 'stale',
+        'access_token' => 'expired-token',
+    ]);
+
+    session([
+        'social_connect_workspace' => $this->workspace->id,
+        'social_reconnect_id' => $account->id,
+    ]);
+
+    $socialiteUser = Mockery::mock(SocialiteUser::class);
+    $socialiteUser->shouldReceive('getId')->andReturn('google_user_123');
+    $socialiteUser->token = 'fresh-access-token';
+    $socialiteUser->refreshToken = 'fresh-refresh-token';
+    $socialiteUser->expiresIn = 3600;
+
+    Socialite::shouldReceive('driver')
+        ->with('google')
+        ->andReturn(Mockery::mock(['user' => $socialiteUser]));
+
+    // The reconnect target is deliberately NOT first: without the reconnect
+    // filter the callback would connect UC_other.
+    Http::fake([
+        'https://www.googleapis.com/youtube/v3/channels*' => Http::response([
+            'items' => [
+                [
+                    'id' => 'UC_other',
+                    'snippet' => ['title' => 'Other', 'customUrl' => '@other', 'thumbnails' => ['default' => ['url' => null]]],
+                    'statistics' => ['subscriberCount' => 5],
+                ],
+                [
+                    'id' => 'UC_target',
+                    'snippet' => ['title' => 'Target', 'customUrl' => '@target', 'thumbnails' => ['default' => ['url' => null]]],
+                    'statistics' => ['subscriberCount' => 10],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.youtube.callback'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('success', true)
+            ->where('message', __('accounts.popup_callback.reconnected'))
+        );
+
+    expect($account->fresh()->platform_user_id)->toBe('UC_target')
+        ->and($account->fresh()->access_token)->toBe('fresh-access-token')
+        ->and($this->workspace->socialAccounts()->where('platform_user_id', 'UC_other')->exists())->toBeFalse();
+});
+
+test('youtube skips an already connected channel and takes the next one', function () {
+    config()->set('trypost.allow_multiple_social_accounts', true);
+
+    SocialAccount::factory()->youtube()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform_user_id' => 'UC_taken',
+    ]);
+
+    session(['social_connect_workspace' => $this->workspace->id]);
+
+    $socialiteUser = Mockery::mock(SocialiteUser::class);
+    $socialiteUser->shouldReceive('getId')->andReturn('google_user_123');
+    $socialiteUser->token = 'test-access-token';
+    $socialiteUser->refreshToken = 'test-refresh-token';
+    $socialiteUser->expiresIn = 3600;
+
+    Socialite::shouldReceive('driver')
+        ->with('google')
+        ->andReturn(Mockery::mock(['user' => $socialiteUser]));
+
+    Http::fake([
+        'https://www.googleapis.com/youtube/v3/channels*' => Http::response([
+            'items' => [
+                [
+                    'id' => 'UC_taken',
+                    'snippet' => ['title' => 'Taken', 'customUrl' => '@taken', 'thumbnails' => ['default' => ['url' => null]]],
+                    'statistics' => ['subscriberCount' => 5],
+                ],
+                [
+                    'id' => 'UC_free',
+                    'snippet' => ['title' => 'Free', 'customUrl' => '@free', 'thumbnails' => ['default' => ['url' => null]]],
+                    'statistics' => ['subscriberCount' => 10],
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.youtube.callback'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page->where('success', true));
+
+    expect($this->workspace->socialAccounts()->where('platform', Platform::YouTube)->pluck('platform_user_id')->sort()->values()->all())
+        ->toBe(['UC_free', 'UC_taken']);
+});

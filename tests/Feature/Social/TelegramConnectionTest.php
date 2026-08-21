@@ -520,3 +520,28 @@ it('registers the webhook via the artisan command', function () {
             && str_contains($request['url'], 'telegram/webhook');
     });
 });
+
+it('reports a busy connect instead of letting the webhook fail', function () {
+    Http::fake();
+    Event::fake([TelegramConnectFailed::class]);
+
+    $code = TelegramConnectCode::issue($this->workspace->id, now()->addMinutes(15));
+    $lock = Cache::lock("social_connect:{$this->workspace->id}:telegram", 10);
+
+    expect($lock->get())->toBeTrue();
+
+    try {
+        $this->withHeader('X-Telegram-Bot-Api-Secret-Token', 'shh-secret')
+            ->postJson(route('telegram.webhook'), telegramUpdate($code))
+            ->assertNoContent();
+    } finally {
+        $lock->release();
+    }
+
+    Event::assertDispatched(
+        TelegramConnectFailed::class,
+        fn (TelegramConnectFailed $event): bool => $event->reason === 'busy'
+    );
+
+    expect($this->workspace->socialAccounts()->count())->toBe(0);
+});
