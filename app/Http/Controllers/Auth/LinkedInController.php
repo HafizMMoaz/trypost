@@ -138,6 +138,7 @@ class LinkedInController extends SocialController
         return Inertia::render('accounts/LinkedInSelect', [
             'person' => $connectable->first($isPerson),
             'organizations' => $connectable->reject($isPerson)->values()->all(),
+            'onboardingProgress' => false,
         ]);
     }
 

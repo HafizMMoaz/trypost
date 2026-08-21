@@ -109,9 +109,8 @@ class MastodonController extends SocialController
     }
 
     /**
-     * Handle OAuth callback
-     */
-    /**
+     * Handle the OAuth callback.
+     *
      * Everything the flow needs is captured into locals before the session is
      * cleared, so every exit below is free of cleanup.
      */

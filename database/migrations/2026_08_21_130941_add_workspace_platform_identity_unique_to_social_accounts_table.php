@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -31,8 +32,8 @@ return new class extends Migration
     /**
      * Installs that predate the unique index could store the same identity twice
      * (the network guard was bypassed for multi-account installs, and Pinterest
-     * always created a fresh row). Keep the newest row per identity, move its
-     * posts over, and drop the stale duplicates so the index can be created.
+     * always created a fresh row). Keep the newest row per identity, move
+     * everything that points at the losers over to it, and drop them.
      */
     private function collapseDuplicateIdentities(): void
     {
@@ -43,16 +44,12 @@ return new class extends Migration
             ->get();
 
         foreach ($duplicates as $duplicate) {
-            $identity = DB::table('social_accounts')
-                ->where('workspace_id', $duplicate->workspace_id)
-                ->where('platform', $duplicate->platform)
-                ->where('platform_user_id', $duplicate->platform_user_id);
-
-            $ids = (clone $identity)
-                ->orderByDesc('created_at')
-                ->orderByDesc('id')
-                ->pluck('id')
-                ->all();
+            $ids = $this->newestFirst(
+                DB::table('social_accounts')
+                    ->where('workspace_id', $duplicate->workspace_id)
+                    ->where('platform', $duplicate->platform)
+                    ->where('platform_user_id', $duplicate->platform_user_id)
+            )->pluck('id')->all();
 
             $keepId = array_shift($ids);
 
@@ -64,6 +61,8 @@ return new class extends Migration
                 ->whereIn('social_account_id', $ids)
                 ->update(['social_account_id' => $keepId]);
 
+            $this->repointAutomations((string) $duplicate->workspace_id, $ids, $keepId);
+
             DB::table('social_accounts')->whereIn('id', $ids)->delete();
 
             $this->dropRepeatedPostTargets($keepId);
@@ -71,16 +70,30 @@ return new class extends Migration
     }
 
     /**
+     * Newest wins, with a total ordering so a rehearsal on a replica and the
+     * real run keep the same row. A null `created_at` sorts oldest on every
+     * engine rather than first on Postgres and last on MySQL.
+     */
+    private function newestFirst(Builder $query): Builder
+    {
+        return $query
+            ->orderByRaw('case when created_at is null then 1 else 0 end')
+            ->orderByDesc('created_at')
+            ->orderByDesc('id');
+    }
+
+    /**
      * A post could hold one row per duplicate account. Once they all point at
-     * the surviving account the post would publish to it once per row, so keep
-     * the most meaningful row per post and drop the rest.
+     * the surviving account the post would publish to it once per row.
      *
-     * Published beats everything because that history cannot be rebuilt, then
-     * enabled beats disabled: SyncPostPlatforms seeds a disabled row for every
-     * account in the workspace, so the usual duplicate is one row the user
-     * actually checked next to one they never saw, both pending and created in
-     * the same second. Keeping the disabled one would silently stop a scheduled
-     * post from reaching that account.
+     * Published rows are never touched: they record a post that is live on the
+     * network and carry the `platform_post_id` needed to manage it later, and
+     * two duplicate accounts really could each have published. Only the
+     * unpublished repeats collapse, preferring the row the user enabled -
+     * SyncPostPlatforms seeds a disabled row for every account in the
+     * workspace, so the usual duplicate is one row the user checked next to one
+     * they never saw, both pending and created in the same second. Keeping the
+     * disabled one would silently stop a scheduled post reaching that account.
      */
     private function dropRepeatedPostTargets(string $keepId): void
     {
@@ -92,18 +105,100 @@ return new class extends Migration
             ->pluck('post_id');
 
         foreach ($repeated as $postId) {
-            $ids = DB::table('post_platforms')
-                ->where('social_account_id', $keepId)
-                ->where('post_id', $postId)
-                ->orderByRaw("case when status = 'published' then 0 else 1 end")
-                ->orderByRaw('case when enabled then 0 else 1 end')
-                ->orderByDesc('created_at')
-                ->pluck('id')
-                ->all();
+            $ids = $this->newestFirst(
+                DB::table('post_platforms')
+                    ->where('social_account_id', $keepId)
+                    ->where('post_id', $postId)
+                    ->where('status', '!=', 'published')
+                    ->orderByRaw('case when enabled then 0 else 1 end')
+            )->pluck('id')->all();
 
             array_shift($ids);
 
-            DB::table('post_platforms')->whereIn('id', $ids)->delete();
+            if ($ids !== []) {
+                DB::table('post_platforms')->whereIn('id', $ids)->delete();
+            }
         }
+    }
+
+    /**
+     * Automation nodes persist `social_account_id` inside a JSON column with no
+     * foreign key, so a dropped account leaves the node pointing at nothing and
+     * RunGenerateNode quietly skips that target. Rewrite the ids and drop the
+     * entries that collapsing just turned into duplicates.
+     *
+     * @param  array<int, string>  $droppedIds
+     */
+    private function repointAutomations(string $workspaceId, array $droppedIds, string $keepId): void
+    {
+        $automations = DB::table('automations')
+            ->where('workspace_id', $workspaceId)
+            ->whereNotNull('nodes')
+            ->get(['id', 'nodes']);
+
+        foreach ($automations as $automation) {
+            $nodes = json_decode((string) $automation->nodes, true);
+
+            if (! is_array($nodes)) {
+                continue;
+            }
+
+            $rewritten = $this->dedupeAccountEntries(
+                $this->replaceAccountIds($nodes, $droppedIds, $keepId)
+            );
+
+            if ($rewritten !== $nodes) {
+                DB::table('automations')
+                    ->where('id', $automation->id)
+                    ->update(['nodes' => json_encode($rewritten)]);
+            }
+        }
+    }
+
+    /**
+     * Account ids are UUIDs, so matching on the value covers both the current
+     * `accounts[].social_account_id` shape and the legacy `social_account_ids`
+     * list without having to know where either sits in the tree.
+     *
+     * @param  array<mixed>  $nodes
+     * @param  array<int, string>  $droppedIds
+     * @return array<mixed>
+     */
+    private function replaceAccountIds(array $nodes, array $droppedIds, string $keepId): array
+    {
+        array_walk_recursive($nodes, function (mixed &$value) use ($droppedIds, $keepId): void {
+            if (is_string($value) && in_array($value, $droppedIds, true)) {
+                $value = $keepId;
+            }
+        });
+
+        return $nodes;
+    }
+
+    /**
+     * @param  array<mixed>  $value
+     * @return array<mixed>
+     */
+    private function dedupeAccountEntries(array $value): array
+    {
+        foreach ($value as $key => $child) {
+            if (! is_array($child)) {
+                continue;
+            }
+
+            $value[$key] = $this->dedupeAccountEntries($child);
+        }
+
+        if (isset($value['accounts']) && is_array($value['accounts'])) {
+            $value['accounts'] = array_values(collect($value['accounts'])
+                ->unique(fn (mixed $entry): string => (string) data_get($entry, 'social_account_id', ''))
+                ->all());
+        }
+
+        if (isset($value['social_account_ids']) && is_array($value['social_account_ids'])) {
+            $value['social_account_ids'] = array_values(array_unique($value['social_account_ids']));
+        }
+
+        return $value;
     }
 };

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Enums\PostPlatform\Status as PostPlatformStatus;
 use App\Enums\SocialAccount\Platform;
+use App\Models\Automation;
 use App\Models\Post;
 use App\Models\PostPlatform;
 use App\Models\SocialAccount;
@@ -113,7 +114,7 @@ test('it leaves a post with a single target when both duplicates were selected',
         ->and(PostPlatform::where('post_id', $post->id)->first()->social_account_id)->toBe($newer->id);
 });
 
-test('it keeps the published row when collapsing repeated post targets', function () {
+test('it never deletes a published row when collapsing repeated post targets', function () {
     $older = SocialAccount::factory()->create([
         'workspace_id' => $this->workspace->id,
         'platform' => Platform::Pinterest,
@@ -130,23 +131,19 @@ test('it keeps the published row when collapsing repeated post targets', functio
 
     $post = Post::factory()->create(['workspace_id' => $this->workspace->id]);
 
-    $published = PostPlatform::factory()->create([
+    // Both duplicates were enabled, so the post really did go out twice and
+    // each row holds the platform_post_id for a live post on the network.
+    $rows = collect([$older, $newer])->map(fn (SocialAccount $account) => PostPlatform::factory()->create([
         'post_id' => $post->id,
-        'social_account_id' => $older->id,
+        'social_account_id' => $account->id,
         'platform' => Platform::Pinterest,
         'status' => PostPlatformStatus::Published,
-    ]);
-
-    PostPlatform::factory()->create([
-        'post_id' => $post->id,
-        'social_account_id' => $newer->id,
-        'platform' => Platform::Pinterest,
-        'status' => PostPlatformStatus::Pending,
-    ]);
+    ]));
 
     $this->migration->up();
 
-    expect(PostPlatform::where('post_id', $post->id)->pluck('id')->all())->toBe([$published->id]);
+    expect(PostPlatform::where('post_id', $post->id)->pluck('id')->sort()->values()->all())
+        ->toBe($rows->pluck('id')->sort()->values()->all());
 });
 
 test('it keeps the enabled row when collapsing repeated post targets', function () {
@@ -230,4 +227,104 @@ test('it restores the unique index so duplicates cannot come back', function () 
         'platform' => Platform::Pinterest,
         'platform_user_id' => 'pin-1',
     ]))->toThrow(UniqueConstraintViolationException::class);
+});
+
+test('it repoints automation nodes at the surviving account', function () {
+    $older = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Pinterest,
+        'platform_user_id' => 'pin-1',
+        'created_at' => now()->subDay(),
+    ]);
+
+    $newer = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Pinterest,
+        'platform_user_id' => 'pin-1',
+        'created_at' => now(),
+    ]);
+
+    $automation = Automation::factory()->for($this->workspace)->create([
+        'nodes' => [
+            [
+                'id' => 'node-1',
+                'type' => 'generate',
+                'config' => [
+                    'accounts' => [
+                        ['social_account_id' => $older->id, 'content_type' => 'pinterest_pin'],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $this->migration->up();
+
+    expect(data_get($automation->fresh()->nodes, '0.config.accounts.0.social_account_id'))->toBe($newer->id);
+});
+
+test('it collapses automation targets that the merge turned into duplicates', function () {
+    $older = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Pinterest,
+        'platform_user_id' => 'pin-1',
+        'created_at' => now()->subDay(),
+    ]);
+
+    $newer = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Pinterest,
+        'platform_user_id' => 'pin-1',
+        'created_at' => now(),
+    ]);
+
+    $automation = Automation::factory()->for($this->workspace)->create([
+        'nodes' => [
+            [
+                'id' => 'node-1',
+                'type' => 'generate',
+                'config' => [
+                    'accounts' => [
+                        ['social_account_id' => $older->id, 'content_type' => 'pinterest_pin'],
+                        ['social_account_id' => $newer->id, 'content_type' => 'pinterest_pin'],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $this->migration->up();
+
+    expect(data_get($automation->fresh()->nodes, '0.config.accounts'))->toHaveCount(1)
+        ->and(data_get($automation->fresh()->nodes, '0.config.accounts.0.social_account_id'))->toBe($newer->id);
+});
+
+test('it repoints the legacy social_account_ids shape too', function () {
+    $older = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Pinterest,
+        'platform_user_id' => 'pin-1',
+        'created_at' => now()->subDay(),
+    ]);
+
+    $newer = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Pinterest,
+        'platform_user_id' => 'pin-1',
+        'created_at' => now(),
+    ]);
+
+    $automation = Automation::factory()->for($this->workspace)->create([
+        'nodes' => [
+            [
+                'id' => 'node-1',
+                'type' => 'generate',
+                'config' => ['social_account_ids' => [$older->id, $newer->id]],
+            ],
+        ],
+    ]);
+
+    $this->migration->up();
+
+    expect(data_get($automation->fresh()->nodes, '0.config.social_account_ids'))->toBe([$newer->id]);
 });
