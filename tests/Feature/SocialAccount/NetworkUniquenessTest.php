@@ -7,8 +7,10 @@ use App\Enums\SocialAccount\Status;
 use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
 use App\Models\SocialAccount;
 use App\Models\Workspace;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\Cache;
 
 beforeEach(function () {
     config()->set('trypost.self_hosted', false);
@@ -326,4 +328,61 @@ test('the observer leaves a missing platform to the database instead of a type e
     expect(fn () => $account->save())
         ->toThrow(QueryException::class)
         ->and(fn () => $account->save())->not->toThrow(TypeError::class);
+});
+
+test('connectIdentity serializes connects on the same network', function () {
+    $lock = Cache::lock("social_connect:{$this->workspace->id}:instagram", 10);
+
+    expect($lock->get())->toBeTrue();
+
+    try {
+        expect(fn () => SocialAccount::connectIdentity(
+            $this->workspace,
+            Platform::Instagram,
+            'ig-a',
+            ['username' => 'blocked', 'status' => Status::Connected],
+        ))->toThrow(LockTimeoutException::class);
+
+        expect($this->workspace->socialAccounts()->count())->toBe(0);
+    } finally {
+        $lock->release();
+    }
+});
+
+test('connectIdentity does not serialize connects on different networks', function () {
+    $lock = Cache::lock("social_connect:{$this->workspace->id}:instagram", 10);
+
+    expect($lock->get())->toBeTrue();
+
+    try {
+        $account = SocialAccount::connectIdentity(
+            $this->workspace,
+            Platform::X,
+            'x-a',
+            ['username' => 'free', 'status' => Status::Connected, 'access_token' => 'x-token'],
+        );
+
+        expect($account->exists)->toBeTrue();
+    } finally {
+        $lock->release();
+    }
+});
+
+test('connectIdentity releases the lock so the next connect proceeds', function () {
+    SocialAccount::connectIdentity(
+        $this->workspace,
+        Platform::X,
+        'x-a',
+        ['username' => 'first', 'status' => Status::Connected, 'access_token' => 'x-token'],
+    );
+
+    $second = SocialAccount::connectIdentity(
+        $this->workspace,
+        Platform::X,
+        'x-a',
+        ['username' => 'second', 'status' => Status::Connected, 'access_token' => 'x-token-2'],
+    );
+
+    expect($second->username)->toBe('second')
+        ->and($this->workspace->socialAccounts()->count())->toBe(1);
 });

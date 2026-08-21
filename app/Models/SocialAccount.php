@@ -108,6 +108,29 @@ class SocialAccount extends Model
         array $values,
         ?self $reconnect = null,
     ): self {
+        // The one-per-network rule is a config flag, so no database constraint
+        // can hold it and the observer's check-then-insert would let two popups
+        // finishing at once seat two different identities on one network.
+        return Cache::lock("social_connect:{$workspace->id}:{$platform->network()}", 10)
+            ->block(5, fn (): self => static::persistIdentity(
+                $workspace,
+                $platform,
+                $platformUserId,
+                $values,
+                $reconnect,
+            ));
+    }
+
+    /**
+     * @param  array<string, mixed>  $values
+     */
+    private static function persistIdentity(
+        Workspace $workspace,
+        SocialPlatform $platform,
+        string $platformUserId,
+        array $values,
+        ?self $reconnect,
+    ): self {
         $values['platform'] = $platform;
         $values['platform_user_id'] = $platformUserId;
 
