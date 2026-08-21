@@ -103,7 +103,17 @@ const instagramMethods = computed(
         ],
 );
 
-const cards = computed(() => {
+interface ConnectCard {
+    key: string;
+    platform: AvailablePlatform;
+    account?: ConnectedAccount;
+    theme: ReturnType<typeof getPlatformTheme>;
+    title: string;
+    state: 'connected' | 'reconnect' | 'connect';
+    extra: boolean;
+}
+
+const cards = computed<ConnectCard[]>(() => {
     const allowMultiple = Boolean(usePage().props.allowMultipleSocialAccounts);
 
     return props.platforms.flatMap((platform) => {
@@ -111,7 +121,7 @@ const cards = computed(() => {
         const theme = getPlatformTheme(platform.value);
         const title = platform.label.split('(')[0].trim();
 
-        const connected = accounts.map((account) => {
+        const connected: ConnectCard[] = accounts.map((account) => {
             const lost =
                 account.status === SocialAccountStatus.Disconnected ||
                 account.status === SocialAccountStatus.TokenExpired;
@@ -131,7 +141,6 @@ const cards = computed(() => {
             connected.push({
                 key: `${platform.value}-connect`,
                 platform,
-                account: undefined,
                 theme,
                 title,
                 state: 'connect',
