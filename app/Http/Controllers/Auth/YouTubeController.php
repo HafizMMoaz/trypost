@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Auth;
 use App\Enums\SocialAccount\Platform as SocialPlatform;
 use App\Enums\SocialAccount\Status;
 use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
+use App\Models\SocialAccount;
 use App\Models\Workspace;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -38,10 +39,7 @@ class YouTubeController extends SocialController
 
         $this->authorize('manageAccounts', $workspace);
 
-        session([
-            'social_connect_workspace' => $workspace->id,
-            'social_reconnect_id' => null,
-        ]);
+        $this->rememberConnectSession($request, $workspace);
 
         return $this->redirectToGoogle();
     }
@@ -63,23 +61,32 @@ class YouTubeController extends SocialController
         try {
             $socialUser = Socialite::driver($this->driver)->user();
 
-            // Fetch the channels the user authorized
             $channels = $this->fetchChannels($socialUser->token);
 
             if (empty($channels)) {
                 return $this->popupCallback(false, __('accounts.popup_callback.no_youtube_channels'), $this->platform->value);
             }
 
+            $channels = $this->filterConnectableIdentities($workspace, $channels, 'id');
+
+            if (empty($channels)) {
+                if ($this->reconnectAccount($workspace)) {
+                    return $this->popupCallback(false, __('accounts.popup_callback.channel_not_found'), $this->platform->value);
+                }
+
+                return $this->popupCallback(false, __('accounts.popup_callback.network_taken'), $this->platform->value);
+            }
+
             // If only one channel, connect directly (most common case)
             if (count($channels) === 1) {
                 $channel = $channels[0];
                 $avatarPath = uploadFromUrl(data_get($channel, 'thumbnail'));
+                $reconnect = $this->reconnectAccount($workspace);
 
-                $workspace->socialAccounts()->updateOrCreate(
-                    [
-                        'platform' => $this->platform->value,
-                        'platform_user_id' => data_get($channel, 'id'),
-                    ],
+                SocialAccount::connectIdentity(
+                    $workspace,
+                    $this->platform,
+                    (string) data_get($channel, 'id'),
                     [
                         'username' => ltrim(data_get($channel, 'custom_url', data_get($channel, 'id')), '@'),
                         'display_name' => data_get($channel, 'title'),
@@ -96,9 +103,12 @@ class YouTubeController extends SocialController
                             'google_user_id' => $socialUser->getId(),
                         ],
                     ],
+                    $reconnect,
                 );
 
-                return $this->popupCallback(true, __('accounts.popup_callback.connected'), $this->platform->value);
+                return $this->popupCallback(true, $reconnect
+                    ? __('accounts.popup_callback.reconnected')
+                    : __('accounts.popup_callback.connected'), $this->platform->value);
             }
 
             // Multiple channels - store data and show selection screen
@@ -108,6 +118,7 @@ class YouTubeController extends SocialController
                     'refresh_token' => $socialUser->refreshToken,
                     'expires_in' => $socialUser->expiresIn,
                     'user_id' => $socialUser->getId(),
+                    'reconnect_id' => session('social_reconnect_id'),
                 ],
             ]);
 
@@ -139,7 +150,6 @@ class YouTubeController extends SocialController
             return $this->popupCallback(false, __('accounts.popup_callback.workspace_not_found'), $this->platform->value);
         }
 
-        // Fetch YouTube channels
         $channels = $this->fetchChannels(data_get($oauthData, 'access_token'));
 
         if (empty($channels)) {
@@ -147,6 +157,19 @@ class YouTubeController extends SocialController
             session()->forget('youtube_oauth');
 
             return $this->popupCallback(false, __('accounts.popup_callback.no_youtube_channels'), $this->platform->value);
+        }
+
+        $channels = $this->filterConnectableIdentities($workspace, $channels, 'id');
+
+        if (empty($channels)) {
+            $message = $this->reconnectAccount($workspace)
+                ? __('accounts.popup_callback.channel_not_found')
+                : __('accounts.popup_callback.network_taken');
+
+            $this->forgetSocialConnectSession();
+            session()->forget('youtube_oauth');
+
+            return $this->popupCallback(false, $message, $this->platform->value);
         }
 
         return Inertia::render('accounts/YouTubeChannelSelect', [
@@ -183,40 +206,13 @@ class YouTubeController extends SocialController
             }
 
             $avatarPath = uploadFromUrl(data_get($selectedChannel, 'thumbnail'));
-            $reconnectId = data_get($oauthData, 'reconnect_id', null);
+            $reconnectId = data_get($oauthData, 'reconnect_id');
+            $reconnect = is_string($reconnectId) ? $workspace->socialAccounts()->find($reconnectId) : null;
 
-            if ($reconnectId) {
-                // Reconnect existing account
-                $existingAccount = $workspace->socialAccounts()->find($reconnectId);
-
-                if ($existingAccount) {
-                    $existingAccount->update([
-                        'platform_user_id' => data_get($selectedChannel, 'id'),
-                        'username' => ltrim(data_get($selectedChannel, 'custom_url', data_get($selectedChannel, 'id')), '@'),
-                        'display_name' => data_get($selectedChannel, 'title'),
-                        'avatar_url' => $avatarPath,
-                        'access_token' => data_get($oauthData, 'access_token'),
-                        'refresh_token' => data_get($oauthData, 'refresh_token'),
-                        'token_expires_at' => data_get($oauthData, 'expires_in') ? now()->addSeconds(data_get($oauthData, 'expires_in')) : null,
-                        'scopes' => $this->scopes,
-                        'meta' => [
-                            'channel_id' => data_get($selectedChannel, 'id'),
-                            'google_user_id' => data_get($oauthData, 'user_id'),
-                        ],
-                    ]);
-                    $existingAccount->markAsConnected();
-
-                    session()->forget(['youtube_oauth', 'social_reconnect_id']);
-
-                    return $this->popupCallback(true, __('accounts.popup_callback.reconnected'), $this->platform->value);
-                }
-            }
-
-            $workspace->socialAccounts()->updateOrCreate(
-                [
-                    'platform' => $this->platform->value,
-                    'platform_user_id' => data_get($selectedChannel, 'id'),
-                ],
+            SocialAccount::connectIdentity(
+                $workspace,
+                $this->platform,
+                (string) data_get($selectedChannel, 'id'),
                 [
                     'username' => ltrim(data_get($selectedChannel, 'custom_url', data_get($selectedChannel, 'id')), '@'),
                     'display_name' => data_get($selectedChannel, 'title'),
@@ -233,11 +229,14 @@ class YouTubeController extends SocialController
                         'google_user_id' => data_get($oauthData, 'user_id'),
                     ],
                 ],
+                $reconnect,
             );
 
             session()->forget(['youtube_oauth', 'social_reconnect_id']);
 
-            return $this->popupCallback(true, __('accounts.popup_callback.connected'), $this->platform->value);
+            return $this->popupCallback(true, $reconnect
+                ? __('accounts.popup_callback.reconnected')
+                : __('accounts.popup_callback.connected'), $this->platform->value);
         } catch (NetworkAlreadyConnectedException) {
             return $this->popupCallback(false, __('accounts.popup_callback.network_taken'), $this->platform->value);
         } catch (\Exception $e) {

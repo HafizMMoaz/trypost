@@ -44,6 +44,33 @@ test('accounts index shows platforms and connected accounts', function () {
     );
 });
 
+test('accounts index still lists every same-network account when multiples are disabled', function () {
+    config()->set('trypost.allow_multiple_social_accounts', false);
+
+    [$first, $second] = SocialAccount::withoutEvents(fn () => [
+        SocialAccount::factory()->create([
+            'workspace_id' => $this->workspace->id,
+            'platform' => Platform::LinkedIn,
+            'platform_user_id' => 'li-a',
+        ]),
+        SocialAccount::factory()->create([
+            'workspace_id' => $this->workspace->id,
+            'platform' => Platform::LinkedIn,
+            'platform_user_id' => 'li-b',
+        ]),
+    ]);
+
+    $response = $this->actingAs($this->user)->get(route('app.accounts'));
+
+    $response->assertOk();
+    $response->assertInertia(fn ($page) => $page
+        ->component('accounts/Index', false)
+        ->has('connectedAccounts', 2)
+        ->where('connectedAccounts', fn ($accounts): bool => collect($accounts)->pluck('id')->contains($first->id)
+            && collect($accounts)->pluck('id')->contains($second->id))
+    );
+});
+
 test('accounts index lists platforms alphabetically by label', function () {
     $response = $this->actingAs($this->user)->get(route('app.accounts'));
 

@@ -8,6 +8,7 @@ use App\Enums\SocialAccount\Platform;
 use App\Enums\SocialAccount\Status;
 use App\Events\TelegramChannelConnected;
 use App\Events\TelegramConnectFailed;
+use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
 use App\Models\SocialAccount;
 use App\Models\Workspace;
 use App\Services\Social\Telegram\TelegramApi;
@@ -45,30 +46,35 @@ class ConnectTelegramChannel
             return null;
         }
 
-        $account = $workspace->socialAccounts()->updateOrCreate(
-            [
-                'platform' => Platform::Telegram->value,
-                'platform_user_id' => $chatId,
-            ],
-            [
-                'username' => $username,
-                'display_name' => data_get($chat, 'title') ?? $username ?? "Telegram {$chatId}",
-                'avatar_url' => self::fetchChannelAvatar($chatId),
-                'access_token' => '',
-                'refresh_token' => '',
-                'token_expires_at' => null,
-                'scopes' => [],
-                'status' => Status::Connected,
-                'error_message' => null,
-                'disconnected_at' => null,
-                'meta' => [
-                    'chat_id' => $chatId,
+        try {
+            $account = SocialAccount::connectIdentity(
+                $workspace,
+                Platform::Telegram,
+                $chatId,
+                [
                     'username' => $username,
-                    'type' => data_get($chat, 'type'),
-                    'connect_nonce' => $nonce,
+                    'display_name' => data_get($chat, 'title') ?? $username ?? "Telegram {$chatId}",
+                    'avatar_url' => self::fetchChannelAvatar($chatId),
+                    'access_token' => '',
+                    'refresh_token' => '',
+                    'token_expires_at' => null,
+                    'scopes' => [],
+                    'status' => Status::Connected,
+                    'error_message' => null,
+                    'disconnected_at' => null,
+                    'meta' => [
+                        'chat_id' => $chatId,
+                        'username' => $username,
+                        'type' => data_get($chat, 'type'),
+                        'connect_nonce' => $nonce,
+                    ],
                 ],
-            ],
-        );
+            );
+        } catch (NetworkAlreadyConnectedException) {
+            TelegramConnectFailed::dispatch($workspace->id, $nonce, 'network_taken');
+
+            return null;
+        }
 
         TelegramChannelConnected::dispatch($workspace->id, $nonce);
 

@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Auth;
 use App\Enums\SocialAccount\Platform as SocialPlatform;
 use App\Enums\SocialAccount\Status;
 use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
+use App\Models\SocialAccount;
 use App\Models\Workspace;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -58,11 +59,10 @@ class PinterestController extends SocialController
 
             $avatarPath = uploadFromUrl($socialUser->getAvatar());
 
-            $workspace->socialAccounts()->updateOrCreate(
-                [
-                    'platform' => $this->platform->value,
-                    'platform_user_id' => $socialUser->getId(),
-                ],
+            SocialAccount::connectIdentity(
+                $workspace,
+                $this->platform,
+                $socialUser->getId(),
                 [
                     'username' => $socialUser->getNickname(),
                     'display_name' => $socialUser->getName() ?? $socialUser->getNickname(),
@@ -76,6 +76,7 @@ class PinterestController extends SocialController
                     'error_message' => null,
                     'disconnected_at' => null,
                 ],
+                $this->reconnectAccount($workspace),
             );
 
             return $this->popupCallback(true, __('accounts.popup_callback.connected'), $this->platform->value);

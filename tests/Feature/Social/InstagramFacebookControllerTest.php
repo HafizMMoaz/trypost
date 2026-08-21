@@ -319,7 +319,7 @@ test('instagram-facebook callback fails without connecting when accounts paginat
     expect($this->workspace->socialAccounts()->where('platform', Platform::InstagramFacebook)->count())->toBe(0);
 });
 
-test('instagram-facebook select connects the page in self-hosted mode', function () {
+test('instagram-facebook select skips deferred onboarding progress in self-hosted mode', function () {
     config()->set('trypost.self_hosted', true);
 
     session([
@@ -370,6 +370,52 @@ test('instagram-facebook select connects the page in self-hosted mode', function
             ->where('message', __('accounts.popup_callback.session_expired'))
             ->where('onboardingProgress', false)
         );
+});
+
+test('instagram-facebook reconnect updates the original card via connectIdentity', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::InstagramFacebook,
+        'platform_user_id' => 'ig-old',
+        'username' => 'oldbiz',
+        'access_token' => 'expired-token',
+    ]);
+
+    session([
+        'social_connect_workspace' => $this->workspace->id,
+        'instagram_facebook_oauth' => [
+            'user_token' => 'user-token',
+            'reconnect_id' => $account->id,
+            'pages' => [
+                [
+                    'page_id' => 'page-1',
+                    'page_name' => 'My Page',
+                    'page_access_token' => 'fresh-token',
+                    'ig_id' => 'ig-old',
+                    'ig_username' => 'mybiz',
+                    'ig_name' => 'My Biz',
+                    'ig_picture' => null,
+                ],
+            ],
+        ],
+    ]);
+
+    $response = $this->actingAs($this->user)->post(route('app.social.instagram-facebook.select'), [
+        'page_id' => 'page-1',
+    ]);
+
+    $response->assertOk();
+    $response->assertInertia(fn (AssertableInertia $page) => $page
+        ->component('accounts/PopupCallback')
+        ->where('success', true)
+        ->where('message', __('accounts.popup_callback.reconnected'))
+    );
+
+    $account->refresh();
+
+    expect($this->workspace->socialAccounts()->where('platform', Platform::InstagramFacebook)->count())->toBe(1)
+        ->and($account->username)->toBe('mybiz')
+        ->and($account->access_token)->toBe('fresh-token');
 });
 
 test('instagram-facebook select page returns popup callback when the session expired', function () {

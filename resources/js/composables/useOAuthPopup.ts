@@ -19,7 +19,7 @@ import { Platform } from '@/types/platform';
 const POPUP_WIDTH = 600;
 const POPUP_HEIGHT = 700;
 
-const CONNECT_ROUTES: Record<string, { url: () => string }> = {
+const CONNECT_ROUTES: Record<string, { url: (options?: { query?: Record<string, string> }) => string }> = {
     [Platform.Bluesky]: blueskyConnect,
     [Platform.Discord]: discordConnect,
     [Platform.Facebook]: facebookConnect,
@@ -46,7 +46,7 @@ export interface SocialOAuthResult {
  * wired to the calling component's lifecycle.
  */
 export const useOAuthPopup = (onResult: (result: SocialOAuthResult) => void) => {
-    const openOAuthPopup = (platform: string) => {
+    const openOAuthPopup = (platform: string, reconnectId?: string) => {
         const route = CONNECT_ROUTES[platform];
 
         if (!route) {
@@ -57,7 +57,7 @@ export const useOAuthPopup = (onResult: (result: SocialOAuthResult) => void) => 
         const top = window.screenY + (window.outerHeight - POPUP_HEIGHT) / 2;
 
         const popup = window.open(
-            route.url(),
+            reconnectId ? route.url({ query: { reconnect: reconnectId } }) : route.url(),
             'oauth-popup',
             `width=${POPUP_WIDTH},height=${POPUP_HEIGHT},left=${left},top=${top},scrollbars=yes,resizable=yes`,
         );

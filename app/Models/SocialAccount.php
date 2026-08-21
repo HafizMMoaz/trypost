@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 
@@ -99,6 +100,48 @@ class SocialAccount extends Model
                 fn (Builder $query) => $query->where('platform_user_id', '!=', $exceptPlatformUserId),
             )
             ->exists();
+    }
+
+    /**
+     * Persist a connected identity, updating a reconnect target when one is
+     * provided. A unique-constraint race retries as an update of the winner.
+     *
+     * @param  array<string, mixed>  $values
+     */
+    public static function connectIdentity(
+        Workspace $workspace,
+        SocialPlatform $platform,
+        string $platformUserId,
+        array $values,
+        ?self $reconnect = null,
+    ): self {
+        if ($reconnect !== null && $reconnect->workspace_id === $workspace->id) {
+            $reconnect->fill(array_merge($values, [
+                'platform_user_id' => $platformUserId,
+            ]));
+            $reconnect->save();
+
+            return $reconnect->fresh();
+        }
+
+        try {
+            return $workspace->socialAccounts()->updateOrCreate(
+                [
+                    'platform' => $platform->value,
+                    'platform_user_id' => $platformUserId,
+                ],
+                $values,
+            );
+        } catch (UniqueConstraintViolationException) {
+            $account = $workspace->socialAccounts()
+                ->where('platform', $platform->value)
+                ->where('platform_user_id', $platformUserId)
+                ->firstOrFail();
+
+            $account->update($values);
+
+            return $account->fresh();
+        }
     }
 
     public function postPlatforms(): HasMany

@@ -8,6 +8,7 @@ use App\Enums\SocialAccount\LinkedInIdentityType;
 use App\Enums\SocialAccount\Platform as SocialPlatform;
 use App\Enums\SocialAccount\Status;
 use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
+use App\Models\SocialAccount;
 use App\Models\Workspace;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -46,7 +47,7 @@ class LinkedInController extends SocialController
 
         $this->authorize('manageAccounts', $workspace);
 
-        session(['social_connect_workspace' => $workspace->id]);
+        $this->rememberConnectSession($request, $workspace);
 
         return Inertia::location(
             Socialite::driver($this->driver)
@@ -185,12 +186,12 @@ class LinkedInController extends SocialController
     private function connectPerson(Workspace $workspace, array $pending): void
     {
         $person = $pending['person'];
+        $reconnect = $this->reconnectAccount($workspace);
 
-        $workspace->socialAccounts()->updateOrCreate(
-            [
-                'platform' => SocialPlatform::LinkedIn->value,
-                'platform_user_id' => data_get($person, 'id'),
-            ],
+        SocialAccount::connectIdentity(
+            $workspace,
+            SocialPlatform::LinkedIn,
+            (string) data_get($person, 'id'),
             [
                 'username' => data_get($person, 'vanity_name'),
                 'display_name' => data_get($person, 'name'),
@@ -203,6 +204,7 @@ class LinkedInController extends SocialController
                 'error_message' => null,
                 'disconnected_at' => null,
             ],
+            $reconnect?->platform === SocialPlatform::LinkedIn ? $reconnect : null,
         );
     }
 
@@ -232,12 +234,12 @@ class LinkedInController extends SocialController
     private function connectOrganization(Workspace $workspace, array $pending, array $organization): void
     {
         $organizationId = data_get($organization, 'id');
+        $reconnect = $this->reconnectAccount($workspace);
 
-        $workspace->socialAccounts()->updateOrCreate(
-            [
-                'platform' => SocialPlatform::LinkedInPage->value,
-                'platform_user_id' => $organizationId,
-            ],
+        SocialAccount::connectIdentity(
+            $workspace,
+            SocialPlatform::LinkedInPage,
+            (string) $organizationId,
             [
                 'username' => data_get($organization, 'vanity_name'),
                 'display_name' => data_get($organization, 'name'),
@@ -255,6 +257,7 @@ class LinkedInController extends SocialController
                     'admin_name' => data_get($pending, 'person.name'),
                 ],
             ],
+            $reconnect?->platform === SocialPlatform::LinkedInPage ? $reconnect : null,
         );
     }
 

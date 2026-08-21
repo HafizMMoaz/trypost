@@ -113,9 +113,4 @@ class Workspace extends Model
     {
         return $this->socialAccounts()->where('platform', $platform)->exists();
     }
-
-    public function getSocialAccount(string $platform): ?SocialAccount
-    {
-        return $this->socialAccounts()->where('platform', $platform)->first();
-    }
 }

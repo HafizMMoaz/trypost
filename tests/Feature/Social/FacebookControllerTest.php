@@ -600,3 +600,117 @@ test('facebook page selection fails with invalid page id', function () {
     $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
     $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'Page not found.'));
 });
+
+test('facebook connect remembers the reconnect account from the query string', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Facebook,
+        'platform_user_id' => 'page_1',
+    ]);
+
+    $driverMock = Mockery::mock();
+    $driverMock->shouldReceive('usingGraphVersion')->andReturnSelf();
+    $driverMock->shouldReceive('setScopes')->andReturnSelf();
+    $driverMock->shouldReceive('redirect')->andReturn(Mockery::mock([
+        'getTargetUrl' => 'https://www.facebook.com/v25.0/dialog/oauth?test=1',
+    ]));
+
+    Socialite::shouldReceive('driver')
+        ->with('facebook')
+        ->andReturn($driverMock);
+
+    $response = $this->actingAs($this->user)
+        ->withHeader('X-Inertia', 'true')
+        ->get(route('app.social.facebook.connect', ['reconnect' => $account->id]));
+
+    $response->assertStatus(409);
+
+    expect(session('social_connect_workspace'))->toBe($this->workspace->id)
+        ->and(session('social_reconnect_id'))->toBe($account->id);
+});
+
+test('facebook connect ignores a reconnect id from another workspace', function () {
+    $foreign = SocialAccount::factory()->create([
+        'platform' => Platform::Facebook,
+        'platform_user_id' => 'foreign-page',
+    ]);
+
+    $driverMock = Mockery::mock();
+    $driverMock->shouldReceive('usingGraphVersion')->andReturnSelf();
+    $driverMock->shouldReceive('setScopes')->andReturnSelf();
+    $driverMock->shouldReceive('redirect')->andReturn(Mockery::mock([
+        'getTargetUrl' => 'https://www.facebook.com/v25.0/dialog/oauth?test=1',
+    ]));
+
+    Socialite::shouldReceive('driver')
+        ->with('facebook')
+        ->andReturn($driverMock);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Inertia', 'true')
+        ->get(route('app.social.facebook.connect', ['reconnect' => $foreign->id]))
+        ->assertStatus(409);
+
+    expect(session('social_reconnect_id'))->toBeNull();
+});
+
+test('facebook reconnect keeps the original card when multiple pages are returned', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Facebook,
+        'platform_user_id' => 'page_1',
+        'username' => 'oldpage',
+        'access_token' => 'expired-token',
+    ]);
+
+    session([
+        'social_connect_workspace' => $this->workspace->id,
+        'social_reconnect_id' => $account->id,
+    ]);
+
+    $socialiteUser = Mockery::mock(SocialiteUser::class);
+    $socialiteUser->shouldReceive('getId')->andReturn('facebook_user_123');
+    $socialiteUser->token = 'test-user-token';
+
+    Socialite::shouldReceive('driver')
+        ->with('facebook')
+        ->andReturn(Mockery::mock()->shouldReceive('usingGraphVersion')->andReturnSelf()->shouldReceive('user')->andReturn($socialiteUser)->getMock());
+
+    Http::fake([
+        'https://graph.facebook.com/*/me/accounts*' => Http::response([
+            'data' => [
+                [
+                    'id' => 'page_1',
+                    'name' => 'Page 1',
+                    'username' => 'page1',
+                    'picture' => ['data' => ['url' => null]],
+                    'access_token' => 'fresh-token',
+                ],
+                [
+                    'id' => 'page_2',
+                    'name' => 'Page 2',
+                    'username' => 'page2',
+                    'picture' => ['data' => ['url' => null]],
+                    'access_token' => 'other-token',
+                ],
+            ],
+        ], 200),
+    ]);
+
+    $response = $this->actingAs($this->user)->get(route('app.social.facebook.callback'));
+
+    $response->assertOk();
+    $response->assertInertia(fn (AssertableInertia $page) => $page
+        ->component('accounts/PopupCallback')
+        ->where('success', true)
+        ->where('message', __('accounts.popup_callback.reconnected'))
+    );
+
+    expect($this->workspace->socialAccounts()->where('platform', Platform::Facebook)->count())->toBe(1);
+
+    $account->refresh();
+
+    expect($account->platform_user_id)->toBe('page_1')
+        ->and($account->access_token)->toBe('fresh-token')
+        ->and($account->username)->toBe('page1');
+});

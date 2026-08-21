@@ -91,11 +91,81 @@ class SocialController extends Controller
         return back();
     }
 
+    protected function rememberConnectSession(Request $request, Workspace $workspace): void
+    {
+        session([
+            'social_connect_workspace' => $workspace->id,
+            'social_reconnect_id' => $this->validatedReconnectId($request, $workspace),
+        ]);
+    }
+
+    protected function validatedReconnectId(Request $request, Workspace $workspace): ?string
+    {
+        $reconnectId = $request->query('reconnect');
+
+        if (! is_string($reconnectId) || $reconnectId === '') {
+            return null;
+        }
+
+        $account = $workspace->socialAccounts()->find($reconnectId);
+
+        if (! $account?->platform instanceof SocialPlatform) {
+            return null;
+        }
+
+        if (! isset($this->platform) || $account->platform->network() !== $this->platform->network()) {
+            return null;
+        }
+
+        return $account->id;
+    }
+
+    protected function reconnectAccount(Workspace $workspace): ?SocialAccount
+    {
+        $reconnectId = session('social_reconnect_id');
+
+        return is_string($reconnectId) ? $workspace->socialAccounts()->find($reconnectId) : null;
+    }
+
+    /**
+     * Keep the reconnect target when one is set; otherwise hide identities the
+     * workspace already occupies unless multiple accounts are allowed.
+     *
+     * @param  array<int, array<string, mixed>>  $identities
+     * @return array<int, array<string, mixed>>
+     */
+    protected function filterConnectableIdentities(Workspace $workspace, array $identities, string $idKey): array
+    {
+        $reconnect = $this->reconnectAccount($workspace);
+
+        if ($reconnect !== null) {
+            return array_values(array_filter(
+                $identities,
+                fn (array $identity): bool => (string) data_get($identity, $idKey) === (string) $reconnect->platform_user_id,
+            ));
+        }
+
+        if (config('trypost.allow_multiple_social_accounts')) {
+            return $identities;
+        }
+
+        $taken = $workspace->socialAccounts()
+            ->whereIn('platform', $this->platform->networkPlatformValues())
+            ->pluck('platform_user_id')
+            ->map(fn (mixed $id): string => (string) $id)
+            ->all();
+
+        return array_values(array_filter(
+            $identities,
+            fn (array $identity): bool => ! in_array((string) data_get($identity, $idKey), $taken, true),
+        ));
+    }
+
     protected function redirectToProvider(Request $request, string $driver, array $scopes): SymfonyResponse
     {
         $workspace = $request->user()->currentWorkspace;
 
-        session(['social_connect_workspace' => $workspace->id]);
+        $this->rememberConnectSession($request, $workspace);
 
         return Inertia::location(
             Socialite::driver($driver)
@@ -127,11 +197,10 @@ class SocialController extends Controller
 
             $avatarPath = uploadFromUrl($socialUser->getAvatar());
 
-            $workspace->socialAccounts()->updateOrCreate(
-                [
-                    'platform' => $platform->value,
-                    'platform_user_id' => $socialUser->getId(),
-                ],
+            SocialAccount::connectIdentity(
+                $workspace,
+                $platform,
+                $socialUser->getId(),
                 [
                     'username' => $socialUser->getNickname(),
                     'display_name' => $socialUser->getName(),
@@ -144,6 +213,7 @@ class SocialController extends Controller
                     'error_message' => null,
                     'disconnected_at' => null,
                 ],
+                $this->reconnectAccount($workspace),
             );
 
             return $this->popupCallback(true, __('accounts.popup_callback.connected'), $platform->value);
@@ -161,7 +231,7 @@ class SocialController extends Controller
 
     protected function forgetSocialConnectSession(): void
     {
-        session()->forget('social_connect_workspace');
+        session()->forget(['social_connect_workspace', 'social_reconnect_id']);
     }
 
     /**

@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Auth;
 use App\Enums\SocialAccount\Platform as SocialPlatform;
 use App\Enums\SocialAccount\Status;
 use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
+use App\Models\SocialAccount;
 use App\Models\Workspace;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -31,6 +32,8 @@ class MastodonController extends SocialController
         $workspace = $request->user()->currentWorkspace;
 
         $this->authorize('manageAccounts', $workspace);
+
+        $this->rememberConnectSession($request, $workspace);
 
         return Inertia::render('accounts/MastodonConnect', [
             'errors' => session('errors')?->getBag('default')?->toArray() ?? [],
@@ -179,11 +182,10 @@ class MastodonController extends SocialController
             // attempting to post.
             $grantedScopes = array_values(array_filter(explode(' ', (string) data_get($tokenData, 'scope', self::SCOPES))));
 
-            $workspace->socialAccounts()->updateOrCreate(
-                [
-                    'platform' => $this->platform->value,
-                    'platform_user_id' => data_get($profile, 'id'),
-                ],
+            SocialAccount::connectIdentity(
+                $workspace,
+                $this->platform,
+                (string) data_get($profile, 'id'),
                 [
                     'username' => data_get($profile, 'acct'),
                     'display_name' => data_get($profile, 'display_name') ?: data_get($profile, 'username'),
@@ -201,6 +203,7 @@ class MastodonController extends SocialController
                         'client_secret' => $clientSecret,
                     ],
                 ],
+                $this->reconnectAccount($workspace),
             );
 
             $this->clearMastodonSession();

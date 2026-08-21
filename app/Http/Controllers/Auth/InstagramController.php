@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Auth;
 use App\Enums\SocialAccount\Platform as SocialPlatform;
 use App\Enums\SocialAccount\Status;
 use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
+use App\Models\SocialAccount;
 use App\Models\Workspace;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -35,10 +36,7 @@ class InstagramController extends SocialController
 
         $this->authorize('manageAccounts', $workspace);
 
-        session([
-            'social_connect_workspace' => $workspace->id,
-            'social_reconnect_id' => null,
-        ]);
+        $this->rememberConnectSession($request, $workspace);
 
         $url = Socialite::driver($this->driver)
             ->scopes($this->scopes)
@@ -72,11 +70,10 @@ class InstagramController extends SocialController
             $expiresIn = $socialUser->expiresIn ?? $this->platform->defaultTokenTtlSeconds();
             $tokenExpiresAt = now()->addSeconds($expiresIn);
 
-            $workspace->socialAccounts()->updateOrCreate(
-                [
-                    'platform' => $this->platform->value,
-                    'platform_user_id' => $socialUser->getId(),
-                ],
+            SocialAccount::connectIdentity(
+                $workspace,
+                $this->platform,
+                $socialUser->getId(),
                 [
                     'username' => $socialUser->getNickname(),
                     'display_name' => $socialUser->getName() ?? $socialUser->getNickname(),
@@ -92,6 +89,7 @@ class InstagramController extends SocialController
                         'account_type' => $socialUser->user['account_type'] ?? null,
                     ],
                 ],
+                $this->reconnectAccount($workspace),
             );
 
             return $this->popupCallback(true, __('accounts.popup_callback.connected'), $this->platform->value);

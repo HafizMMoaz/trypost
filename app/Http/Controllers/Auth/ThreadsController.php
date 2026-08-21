@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Auth;
 use App\Enums\SocialAccount\Platform as SocialPlatform;
 use App\Enums\SocialAccount\Status;
 use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
+use App\Models\SocialAccount;
 use App\Models\Workspace;
 use App\Services\Social\TokenRedactor;
 use Illuminate\Http\Request;
@@ -34,10 +35,7 @@ class ThreadsController extends SocialController
 
         $this->authorize('manageAccounts', $workspace);
 
-        session([
-            'social_connect_workspace' => $workspace->id,
-            'social_reconnect_id' => null,
-        ]);
+        $this->rememberConnectSession($request, $workspace);
 
         $state = bin2hex(random_bytes(16));
         session(['threads_oauth_state' => $state]);
@@ -135,11 +133,10 @@ class ThreadsController extends SocialController
             $profile = $profileResponse->json();
             $avatarPath = uploadFromUrl(data_get($profile, 'threads_profile_picture_url', null));
 
-            $workspace->socialAccounts()->updateOrCreate(
-                [
-                    'platform' => $this->platform->value,
-                    'platform_user_id' => data_get($profile, 'id'),
-                ],
+            SocialAccount::connectIdentity(
+                $workspace,
+                $this->platform,
+                (string) data_get($profile, 'id'),
                 [
                     'username' => data_get($profile, 'username'),
                     'display_name' => data_get($profile, 'name', data_get($profile, 'username')),
@@ -152,6 +149,7 @@ class ThreadsController extends SocialController
                     'error_message' => null,
                     'disconnected_at' => null,
                 ],
+                $this->reconnectAccount($workspace),
             );
 
             session()->forget(['threads_oauth_state', 'social_reconnect_id']);

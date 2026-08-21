@@ -200,7 +200,7 @@ const reconnectAccount = (account: ConnectedAccount) => {
     }
 
     // Reconnect with the same OAuth method — skip the Instagram method picker.
-    openOAuthPopup(entry);
+    openOAuthPopup(entry, account.id);
 };
 
 const CardState = {

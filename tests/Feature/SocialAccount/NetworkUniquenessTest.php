@@ -7,6 +7,7 @@ use App\Enums\SocialAccount\Status;
 use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
 use App\Models\SocialAccount;
 use App\Models\Workspace;
+use Illuminate\Database\UniqueConstraintViolationException;
 
 beforeEach(function () {
     config()->set('trypost.self_hosted', false);
@@ -170,4 +171,43 @@ test('blocks a same-id account connected via a different network variant', funct
         'platform' => Platform::InstagramFacebook,
         'platform_user_id' => 'shared-ig-id',
     ]))->toThrow(NetworkAlreadyConnectedException::class);
+});
+
+test('the same workspace platform identity cannot be stored twice', function () {
+    config()->set('trypost.allow_multiple_social_accounts', true);
+
+    SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Instagram,
+        'platform_user_id' => 'ig-a',
+    ]);
+
+    expect(fn () => SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Instagram,
+        'platform_user_id' => 'ig-a',
+    ]))->toThrow(UniqueConstraintViolationException::class);
+});
+
+test('connectIdentity updates the reconnect target even when the identity changes', function () {
+    config()->set('trypost.allow_multiple_social_accounts', true);
+
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Instagram,
+        'platform_user_id' => 'ig-a',
+        'username' => 'old',
+    ]);
+
+    $updated = SocialAccount::connectIdentity(
+        $this->workspace,
+        Platform::Instagram,
+        'ig-b',
+        ['username' => 'new', 'status' => Status::Connected],
+        $account,
+    );
+
+    expect($updated->id)->toBe($account->id)
+        ->and($updated->platform_user_id)->toBe('ig-b')
+        ->and($this->workspace->socialAccounts()->count())->toBe(1);
 });
