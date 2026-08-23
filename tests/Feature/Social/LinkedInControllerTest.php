@@ -797,3 +797,60 @@ test('select-identity does not defer onboarding progress back onto its own route
 
     expect(session()->has('linkedin_pending'))->toBeFalse();
 });
+
+test('select-identity reports a wrong account when a profile reconnect authorized another member', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::LinkedIn,
+        'platform_user_id' => 'person-123',
+    ]);
+
+    session([
+        'social_connect_workspace' => $this->workspace->id,
+        'social_reconnect_id' => $account->id,
+        'linkedin_pending' => [
+            'workspace_id' => $this->workspace->id,
+            'token' => 'test-access-token',
+            'refresh_token' => 'test-refresh-token',
+            'expires_in' => 5184000,
+            'approved_scopes' => ['openid', 'profile', 'email', 'w_member_social'],
+            'person' => ['id' => 'person-999', 'name' => 'Someone Else', 'avatar' => null, 'vanity_name' => null],
+            'organizations' => [],
+        ],
+    ]);
+
+    $response = $this->actingAs($this->user)->get(route('app.social.linkedin.select-identity'));
+
+    $response->assertInertia(fn (Assert $page) => $page->where('success', false));
+    $response->assertInertia(fn (Assert $page) => $page->where('message', __('accounts.popup_callback.wrong_account')));
+
+    expect(session('linkedin_pending'))->toBeNull()
+        ->and($account->fresh()->platform_user_id)->toBe('person-123');
+});
+
+test('select-identity still reports a missing page when a page reconnect lost its organization', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::LinkedInPage,
+        'platform_user_id' => 'org-123',
+    ]);
+
+    session([
+        'social_connect_workspace' => $this->workspace->id,
+        'social_reconnect_id' => $account->id,
+        'linkedin_pending' => [
+            'workspace_id' => $this->workspace->id,
+            'token' => 'test-access-token',
+            'refresh_token' => 'test-refresh-token',
+            'expires_in' => 5184000,
+            'approved_scopes' => ['openid', 'w_organization_social'],
+            'person' => ['id' => 'person-123', 'name' => 'John Doe', 'avatar' => null, 'vanity_name' => null],
+            'organizations' => [],
+        ],
+    ]);
+
+    $response = $this->actingAs($this->user)->get(route('app.social.linkedin.select-identity'));
+
+    $response->assertInertia(fn (Assert $page) => $page->where('success', false));
+    $response->assertInertia(fn (Assert $page) => $page->where('message', __('accounts.popup_callback.page_not_found')));
+});

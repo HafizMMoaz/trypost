@@ -125,7 +125,13 @@ class LinkedInController extends SocialController
         if ($identities !== [] && $connectable->isEmpty()) {
             session()->forget('linkedin_pending');
 
-            return $this->noConnectableIdentities($reconnect, 'page_not_found');
+            // A profile reconnect has no page to be missing: the pool emptying
+            // means this login is a different member than the card being
+            // reconnected.
+            return $this->noConnectableIdentities(
+                $reconnect,
+                $reconnect?->platform === SocialPlatform::LinkedIn ? 'wrong_account' : 'page_not_found',
+            );
         }
 
         if ($connectable->isEmpty()) {
