@@ -854,3 +854,89 @@ test('select-identity still reports a missing page when a page reconnect lost it
     $response->assertInertia(fn (Assert $page) => $page->where('success', false));
     $response->assertInertia(fn (Assert $page) => $page->where('message', __('accounts.popup_callback.page_not_found')));
 });
+
+/**
+ * connectIdentity() refuses a mismatched reconnect on its own, so these guards
+ * are not what produces the error — they are what stops the avatar download
+ * that building the connect payload would otherwise run first. Without them the
+ * suite still passes and the wasted fetch comes back unnoticed.
+ */
+test('rejecting a mismatched organization reconnect never downloads its logo', function () {
+    Storage::fake();
+
+    $account = SocialAccount::factory()->linkedin()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform_user_id' => 'person-123',
+    ]);
+
+    session([
+        'social_reconnect_id' => $account->id,
+        'linkedin_pending' => [
+            'workspace_id' => $this->workspace->id,
+            'token' => 'fresh-access-token',
+            'refresh_token' => 'fresh-refresh-token',
+            'expires_in' => 5184000,
+            'approved_scopes' => ['openid', 'w_organization_social'],
+            'person' => ['id' => 'person-123', 'name' => 'John Doe', 'avatar' => null, 'vanity_name' => 'johndoe'],
+            'organizations' => [
+                ['id' => 111, 'name' => 'My Company', 'vanity_name' => 'myco', 'logo' => 'https://93.184.216.34/logo.jpg'],
+            ],
+        ],
+    ]);
+
+    // A public IP literal as the host lets SafeHttpFetcher's SSRF guard pass
+    // without a real DNS lookup; Http::fake() intercepts before any network I/O.
+    Http::fake([
+        'https://93.184.216.34/logo.jpg' => Http::response('fake-image-bytes', 200, ['Content-Type' => 'image/jpeg']),
+    ]);
+
+    $this->actingAs($this->user)
+        ->post(route('app.social.linkedin.select'), ['type' => 'organization', 'organization_id' => 111])
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('success', false)
+            ->where('message', __('accounts.popup_callback.wrong_account'))
+        );
+
+    Http::assertNotSent(fn ($request) => $request->url() === 'https://93.184.216.34/logo.jpg');
+
+    expect($account->fresh()->platform_user_id)->toBe('person-123');
+});
+
+test('rejecting a mismatched profile reconnect never downloads its avatar', function () {
+    Storage::fake();
+
+    $account = SocialAccount::factory()->linkedin()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform_user_id' => 'person-123',
+    ]);
+
+    session([
+        'social_reconnect_id' => $account->id,
+        'linkedin_pending' => [
+            'workspace_id' => $this->workspace->id,
+            'token' => 'fresh-access-token',
+            'refresh_token' => 'fresh-refresh-token',
+            'expires_in' => 5184000,
+            'approved_scopes' => ['openid', 'profile', 'w_member_social'],
+            'person' => ['id' => 'person-999', 'name' => 'Someone Else', 'avatar' => 'https://93.184.216.34/avatar.jpg', 'vanity_name' => 'someone'],
+            'organizations' => [],
+        ],
+    ]);
+
+    Http::fake([
+        'https://93.184.216.34/avatar.jpg' => Http::response('fake-image-bytes', 200, ['Content-Type' => 'image/jpeg']),
+    ]);
+
+    $this->actingAs($this->user)
+        ->post(route('app.social.linkedin.select'), ['type' => 'person'])
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->where('success', false)
+            ->where('message', __('accounts.popup_callback.wrong_account'))
+        );
+
+    Http::assertNotSent(fn ($request) => $request->url() === 'https://93.184.216.34/avatar.jpg');
+
+    expect($account->fresh()->platform_user_id)->toBe('person-123');
+});
