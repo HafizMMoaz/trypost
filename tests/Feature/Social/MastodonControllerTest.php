@@ -253,3 +253,97 @@ test('mastodon works with custom instances', function () {
 
     expect(session('mastodon_instance'))->toBe('https://techhub.social');
 });
+
+test('mastodon callback reconnects the original card', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Mastodon,
+        'platform_user_id' => '123456789',
+        'username' => 'old',
+        'access_token' => 'expired-token',
+        'status' => Status::TokenExpired,
+    ]);
+
+    session([
+        'mastodon_instance' => 'https://mastodon.social',
+        'mastodon_client_id' => 'test-client-id',
+        'mastodon_client_secret' => 'test-client-secret',
+        'mastodon_oauth_state' => 'test-state',
+        'social_connect_workspace' => $this->workspace->id,
+        'social_reconnect_id' => $account->id,
+    ]);
+
+    Http::fake([
+        'https://mastodon.social/oauth/token' => Http::response([
+            'access_token' => 'fresh-access-token',
+            'token_type' => 'Bearer',
+            'scope' => 'read:accounts write:statuses write:media',
+            'created_at' => time(),
+        ], 200),
+        'https://mastodon.social/api/v1/accounts/verify_credentials' => Http::response([
+            'id' => '123456789',
+            'username' => 'testuser',
+            'acct' => 'testuser',
+            'display_name' => 'Test User',
+            'avatar' => null,
+        ], 200),
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.mastodon.callback', ['code' => 'test-auth-code', 'state' => 'test-state']))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('success', true)
+            ->where('message', __('accounts.popup_callback.reconnected'))
+        );
+
+    expect($this->workspace->socialAccounts()->count())->toBe(1)
+        ->and($account->fresh()->access_token)->toBe('fresh-access-token')
+        ->and($account->fresh()->username)->toBe('testuser')
+        ->and($account->fresh()->status)->toBe(Status::Connected);
+});
+
+test('mastodon reconnect that authorizes another account says so instead of connecting', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Mastodon,
+        'platform_user_id' => '123456789',
+        'username' => 'old',
+    ]);
+
+    session([
+        'mastodon_instance' => 'https://mastodon.social',
+        'mastodon_client_id' => 'test-client-id',
+        'mastodon_client_secret' => 'test-client-secret',
+        'mastodon_oauth_state' => 'test-state',
+        'social_connect_workspace' => $this->workspace->id,
+        'social_reconnect_id' => $account->id,
+    ]);
+
+    Http::fake([
+        'https://mastodon.social/oauth/token' => Http::response([
+            'access_token' => 'other-access-token',
+            'token_type' => 'Bearer',
+            'scope' => 'read:accounts write:statuses write:media',
+            'created_at' => time(),
+        ], 200),
+        'https://mastodon.social/api/v1/accounts/verify_credentials' => Http::response([
+            'id' => '999999999',
+            'username' => 'someone-else',
+            'acct' => 'someone-else',
+            'display_name' => 'Someone Else',
+            'avatar' => null,
+        ], 200),
+    ]);
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.mastodon.callback', ['code' => 'test-auth-code', 'state' => 'test-state']))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('success', false)
+            ->where('message', __('accounts.popup_callback.wrong_account'))
+        );
+
+    expect($this->workspace->socialAccounts()->count())->toBe(1)
+        ->and($account->fresh()->platform_user_id)->toBe('123456789');
+});

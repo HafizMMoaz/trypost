@@ -183,3 +183,112 @@ test('tiktok callback handles oauth errors gracefully', function () {
     $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
     $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', 'Error connecting account. Please try again.'));
 });
+
+test('tiktok connect carries a reconnect id into the session', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::TikTok,
+        'platform_user_id' => 'tiktok123',
+    ]);
+
+    $driverMock = Mockery::mock();
+    $driverMock->shouldReceive('scopes')->andReturnSelf();
+    $driverMock->shouldReceive('redirect')->andReturn(Mockery::mock([
+        'getTargetUrl' => 'https://www.tiktok.com/v2/auth/authorize?test=1',
+    ]));
+
+    Socialite::shouldReceive('driver')->with('tiktok')->andReturn($driverMock);
+
+    $this->actingAs($this->user)
+        ->withHeader('X-Inertia', 'true')
+        ->get(route('app.social.tiktok.connect', ['reconnect' => $account->id]))
+        ->assertStatus(409);
+
+    expect(session('social_reconnect_id'))->toBe($account->id);
+});
+
+test('tiktok callback reconnects the original card', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::TikTok,
+        'platform_user_id' => 'tiktok123',
+        'username' => 'old',
+        'access_token' => 'expired-token',
+        'status' => Status::TokenExpired,
+    ]);
+
+    session([
+        'social_connect_workspace' => $this->workspace->id,
+        'social_reconnect_id' => $account->id,
+    ]);
+
+    $socialiteUser = Mockery::mock(SocialiteUser::class);
+    $socialiteUser->shouldReceive('getId')->andReturn('tiktok123');
+    $socialiteUser->shouldReceive('getNickname')->andReturn('tiktoker');
+    $socialiteUser->shouldReceive('getName')->andReturn('TikTok User');
+    $socialiteUser->shouldReceive('getAvatar')->andReturn(null);
+    $socialiteUser->token = 'fresh-access-token';
+    $socialiteUser->refreshToken = 'fresh-refresh-token';
+    $socialiteUser->expiresIn = 86400;
+    $socialiteUser->approvedScopes = ['user.info.basic', 'user.info.profile', 'video.publish'];
+
+    $socialiteMock = Mockery::mock();
+    $socialiteMock->shouldReceive('scopes')->andReturn($socialiteMock);
+    $socialiteMock->shouldReceive('user')->andReturn($socialiteUser);
+
+    Socialite::shouldReceive('driver')->with('tiktok')->andReturn($socialiteMock);
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.tiktok.callback'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('success', true)
+            ->where('message', __('accounts.popup_callback.reconnected'))
+        );
+
+    expect($this->workspace->socialAccounts()->count())->toBe(1)
+        ->and($account->fresh()->access_token)->toBe('fresh-access-token')
+        ->and($account->fresh()->username)->toBe('tiktoker')
+        ->and($account->fresh()->status)->toBe(Status::Connected);
+});
+
+test('tiktok reconnect that authorizes another account says so instead of connecting', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::TikTok,
+        'platform_user_id' => 'tiktok123',
+        'username' => 'old',
+    ]);
+
+    session([
+        'social_connect_workspace' => $this->workspace->id,
+        'social_reconnect_id' => $account->id,
+    ]);
+
+    $socialiteUser = Mockery::mock(SocialiteUser::class);
+    $socialiteUser->shouldReceive('getId')->andReturn('tiktok999');
+    $socialiteUser->shouldReceive('getNickname')->andReturn('someone-else');
+    $socialiteUser->shouldReceive('getName')->andReturn('Someone Else');
+    $socialiteUser->shouldReceive('getAvatar')->andReturn(null);
+    $socialiteUser->token = 'other-access-token';
+    $socialiteUser->refreshToken = 'other-refresh-token';
+    $socialiteUser->expiresIn = 86400;
+    $socialiteUser->approvedScopes = ['user.info.basic'];
+
+    $socialiteMock = Mockery::mock();
+    $socialiteMock->shouldReceive('scopes')->andReturn($socialiteMock);
+    $socialiteMock->shouldReceive('user')->andReturn($socialiteUser);
+
+    Socialite::shouldReceive('driver')->with('tiktok')->andReturn($socialiteMock);
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.tiktok.callback'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('success', false)
+            ->where('message', __('accounts.popup_callback.wrong_account'))
+        );
+
+    expect($this->workspace->socialAccounts()->count())->toBe(1)
+        ->and($account->fresh()->platform_user_id)->toBe('tiktok123');
+});

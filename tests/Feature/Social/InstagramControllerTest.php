@@ -223,3 +223,86 @@ test('instagram callback refuses an identity already connected via the facebook 
 
     expect($this->workspace->socialAccounts()->where('platform_user_id', 'shared-ig-id')->count())->toBe(1);
 });
+
+test('instagram callback reconnects the original card', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Instagram,
+        'platform_user_id' => '12345678',
+        'username' => 'old',
+        'access_token' => 'expired-token',
+        'status' => Status::TokenExpired,
+    ]);
+
+    session([
+        'social_connect_workspace' => $this->workspace->id,
+        'social_reconnect_id' => $account->id,
+    ]);
+
+    $socialiteUser = Mockery::mock(SocialiteUser::class);
+    $socialiteUser->shouldReceive('getId')->andReturn('12345678');
+    $socialiteUser->shouldReceive('getNickname')->andReturn('testuser');
+    $socialiteUser->shouldReceive('getName')->andReturn('Test User');
+    $socialiteUser->shouldReceive('getAvatar')->andReturn(null);
+    $socialiteUser->token = 'fresh-access-token';
+    $socialiteUser->refreshToken = 'fresh-refresh-token';
+    $socialiteUser->expiresIn = 5184000;
+    $socialiteUser->user = ['account_type' => 'BUSINESS'];
+
+    Socialite::shouldReceive('driver')
+        ->with('instagram')
+        ->andReturn(Mockery::mock(['user' => $socialiteUser]));
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.instagram.callback'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('success', true)
+            ->where('message', __('accounts.popup_callback.reconnected'))
+        );
+
+    expect($this->workspace->socialAccounts()->count())->toBe(1)
+        ->and($account->fresh()->access_token)->toBe('fresh-access-token')
+        ->and($account->fresh()->username)->toBe('testuser')
+        ->and($account->fresh()->status)->toBe(Status::Connected);
+});
+
+test('instagram reconnect that authorizes another account says so instead of connecting', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Instagram,
+        'platform_user_id' => '12345678',
+        'username' => 'old',
+    ]);
+
+    session([
+        'social_connect_workspace' => $this->workspace->id,
+        'social_reconnect_id' => $account->id,
+    ]);
+
+    $socialiteUser = Mockery::mock(SocialiteUser::class);
+    $socialiteUser->shouldReceive('getId')->andReturn('99999999');
+    $socialiteUser->shouldReceive('getNickname')->andReturn('someone-else');
+    $socialiteUser->shouldReceive('getName')->andReturn('Someone Else');
+    $socialiteUser->shouldReceive('getAvatar')->andReturn(null);
+    $socialiteUser->token = 'other-access-token';
+    $socialiteUser->refreshToken = 'other-refresh-token';
+    $socialiteUser->expiresIn = 5184000;
+    $socialiteUser->user = ['account_type' => 'BUSINESS'];
+
+    Socialite::shouldReceive('driver')
+        ->with('instagram')
+        ->andReturn(Mockery::mock(['user' => $socialiteUser]));
+
+    $this->actingAs($this->user)
+        ->get(route('app.social.instagram.callback'))
+        ->assertOk()
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('success', false)
+            ->where('message', __('accounts.popup_callback.wrong_account'))
+        );
+
+    expect($this->workspace->socialAccounts()->count())->toBe(1)
+        ->and($account->fresh()->platform_user_id)->toBe('12345678')
+        ->and($account->fresh()->username)->toBe('old');
+});
