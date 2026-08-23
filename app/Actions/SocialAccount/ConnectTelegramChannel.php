@@ -12,7 +12,6 @@ use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
 use App\Models\SocialAccount;
 use App\Models\Workspace;
 use App\Services\Social\Telegram\TelegramApi;
-use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Throwable;
@@ -85,15 +84,11 @@ class ConnectTelegramChannel
                 ],
                 $reconnect,
             );
-        } catch (NetworkAlreadyConnectedException) {
-            TelegramConnectFailed::dispatch($workspace->id, $nonce, 'network_taken');
-
-            return null;
-        } catch (LockTimeoutException) {
-            // The nonce is already spent, so letting this reach the webhook
-            // would 500 to Telegram and its retry would short-circuit on the
-            // consumed code, leaving the dialog spinning with no error.
-            TelegramConnectFailed::dispatch($workspace->id, $nonce, 'busy');
+        } catch (NetworkAlreadyConnectedException $e) {
+            // The nonce is already spent, so letting a busy lock reach the
+            // webhook would 500 to Telegram and its retry would short-circuit
+            // on the consumed code, leaving the dialog spinning with no error.
+            TelegramConnectFailed::dispatch($workspace->id, $nonce, $e->messageKey);
 
             return null;
         }

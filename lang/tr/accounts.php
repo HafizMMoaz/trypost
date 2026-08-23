@@ -147,6 +147,7 @@ return [
         'network_taken' => 'Bu çalışma alanında bu ağa ait zaten bir hesap var. Önce bağlantısını kesin.',
         'wrong_account' => 'Bu farklı bir hesap. Yeniden bağladığınız hesabı yetkilendirin.',
         'all_connected' => 'Bu oturumdaki tüm hesaplar zaten bağlı.',
+        'busy' => 'Başka bir bağlantı hâlâ tamamlanıyor. Lütfen birazdan tekrar deneyin.',
         'error_connecting_page' => 'Sayfa bağlanırken hata oluştu. Lütfen tekrar deneyin.',
         'error_connecting_channel' => 'Kanal bağlanırken hata oluştu. Lütfen tekrar deneyin.',
         'session_expired' => 'Oturum süresi doldu. Lütfen tekrar deneyin.',

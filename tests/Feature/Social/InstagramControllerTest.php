@@ -8,6 +8,8 @@ use App\Enums\UserWorkspace\Role;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Models\Workspace;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Inertia\Testing\AssertableInertia;
 use Laravel\Socialite\Facades\Socialite;
 use Laravel\Socialite\Two\User as SocialiteUser;
@@ -305,4 +307,44 @@ test('instagram reconnect that authorizes another account says so instead of con
     expect($this->workspace->socialAccounts()->count())->toBe(1)
         ->and($account->fresh()->platform_user_id)->toBe('12345678')
         ->and($account->fresh()->username)->toBe('old');
+});
+
+test('a connect racing another on the same network says it is busy without filing an error', function () {
+    Log::spy();
+
+    session(['social_connect_workspace' => $this->workspace->id]);
+
+    $socialiteUser = Mockery::mock(SocialiteUser::class);
+    $socialiteUser->shouldReceive('getId')->andReturn('12345678');
+    $socialiteUser->shouldReceive('getNickname')->andReturn('testuser');
+    $socialiteUser->shouldReceive('getName')->andReturn('Test User');
+    $socialiteUser->shouldReceive('getAvatar')->andReturn(null);
+    $socialiteUser->token = 'test-access-token';
+    $socialiteUser->refreshToken = 'test-refresh-token';
+    $socialiteUser->expiresIn = 5184000;
+    $socialiteUser->user = ['account_type' => 'BUSINESS'];
+
+    Socialite::shouldReceive('driver')
+        ->with('instagram')
+        ->andReturn(Mockery::mock(['user' => $socialiteUser]));
+
+    $lock = Cache::lock("social_connect:{$this->workspace->id}:".Platform::Instagram->network(), 10);
+
+    expect($lock->get())->toBeTrue();
+
+    try {
+        $this->actingAs($this->user)
+            ->get(route('app.social.instagram.callback'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('success', false)
+                ->where('message', __('accounts.popup_callback.busy'))
+            );
+    } finally {
+        $lock->release();
+    }
+
+    expect($this->workspace->socialAccounts()->count())->toBe(0);
+
+    Log::shouldNotHaveReceived('error');
 });

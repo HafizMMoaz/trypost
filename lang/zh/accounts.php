@@ -145,6 +145,7 @@ return [
         'network_taken' => '此工作区已连接了该网络的账号。请先断开该连接。',
         'wrong_account' => '这是另一个账号。请授权你正在重新连接的那个。',
         'all_connected' => '此登录下的所有账号都已连接。',
+        'busy' => '另一个连接仍在完成中，请稍后重试。',
         'error_connecting_page' => '连接页面时出错，请重试。',
         'error_connecting_channel' => '连接频道时出错，请重试。',
         'session_expired' => '会话已过期，请重试。',

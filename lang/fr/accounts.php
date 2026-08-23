@@ -145,6 +145,7 @@ return [
         'network_taken' => 'Cet espace de travail a déjà un compte pour ce réseau. Déconnectez-le d\'abord.',
         'wrong_account' => 'C\'est un autre compte. Autorisez celui que vous reconnectez.',
         'all_connected' => 'Tous les comptes de cette connexion sont déjà connectés.',
+        'busy' => 'Une autre connexion est en cours de finalisation. Veuillez réessayer dans un instant.',
         'error_connecting_page' => 'Erreur lors de la connexion de la page. Veuillez réessayer.',
         'error_connecting_channel' => 'Erreur lors de la connexion de la chaîne. Veuillez réessayer.',
         'session_expired' => 'Session expirée. Veuillez réessayer.',

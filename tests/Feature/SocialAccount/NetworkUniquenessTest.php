@@ -2,12 +2,15 @@
 
 declare(strict_types=1);
 
+use App\Enums\PostPlatform\ContentType;
+use App\Enums\PostPlatform\Status as PostPlatformStatus;
 use App\Enums\SocialAccount\Platform;
 use App\Enums\SocialAccount\Status;
 use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
+use App\Models\Post;
+use App\Models\PostPlatform;
 use App\Models\SocialAccount;
 use App\Models\Workspace;
-use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Database\QueryException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Cache;
@@ -336,12 +339,18 @@ test('connectIdentity serializes connects on the same network', function () {
     expect($lock->get())->toBeTrue();
 
     try {
-        expect(fn () => SocialAccount::connectIdentity(
-            $this->workspace,
-            Platform::Instagram,
-            'ig-a',
-            ['username' => 'blocked', 'status' => Status::Connected],
-        ))->toThrow(LockTimeoutException::class);
+        try {
+            SocialAccount::connectIdentity(
+                $this->workspace,
+                Platform::Instagram,
+                'ig-a',
+                ['username' => 'blocked', 'status' => Status::Connected],
+            );
+
+            $this->fail('A busy network lock should reject the connect.');
+        } catch (NetworkAlreadyConnectedException $e) {
+            expect($e->messageKey)->toBe('busy');
+        }
 
         expect($this->workspace->socialAccounts()->count())->toBe(0);
     } finally {
@@ -385,4 +394,127 @@ test('connectIdentity releases the lock so the next connect proceeds', function 
 
     expect($second->username)->toBe('second')
         ->and($this->workspace->socialAccounts()->count())->toBe(1);
+});
+
+test('reconnecting through the other variant moves pending targets onto the new platform', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Instagram,
+        'platform_user_id' => 'shared-ig-id',
+        'scopes' => ['instagram_business_content_publish'],
+    ]);
+
+    $post = Post::factory()->create(['workspace_id' => $this->workspace->id]);
+
+    $pending = PostPlatform::factory()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $account->id,
+        'platform' => Platform::Instagram->value,
+        'content_type' => ContentType::InstagramReel,
+        'status' => PostPlatformStatus::Pending,
+    ]);
+
+    SocialAccount::connectIdentity(
+        $this->workspace,
+        Platform::InstagramFacebook,
+        'shared-ig-id',
+        ['username' => 'brand', 'scopes' => ['instagram_content_publish'], 'status' => Status::Connected],
+        $account,
+    );
+
+    expect($account->fresh()->platform)->toBe(Platform::InstagramFacebook)
+        ->and($pending->fresh()->platform)->toBe(Platform::InstagramFacebook)
+        ->and($pending->fresh()->content_type)->toBe(ContentType::InstagramReel)
+        ->and(array_diff(
+            $pending->fresh()->platform->requiredPublishScopes(),
+            $account->fresh()->scopes,
+        ))->toBe([]);
+});
+
+test('a variant move leaves a published target on the platform it really published to', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Instagram,
+        'platform_user_id' => 'shared-ig-id',
+    ]);
+
+    $post = Post::factory()->create(['workspace_id' => $this->workspace->id]);
+
+    $published = PostPlatform::factory()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $account->id,
+        'platform' => Platform::Instagram->value,
+        'status' => PostPlatformStatus::Published,
+    ]);
+
+    SocialAccount::connectIdentity(
+        $this->workspace,
+        Platform::InstagramFacebook,
+        'shared-ig-id',
+        ['username' => 'brand', 'status' => Status::Connected],
+        $account,
+    );
+
+    expect($published->fresh()->platform)->toBe(Platform::Instagram);
+});
+
+test('a variant move resets a content type the new platform cannot publish', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::LinkedIn,
+        'platform_user_id' => 'li-same',
+    ]);
+
+    $post = Post::factory()->create(['workspace_id' => $this->workspace->id]);
+
+    $pending = PostPlatform::factory()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $account->id,
+        'platform' => Platform::LinkedIn->value,
+        'content_type' => ContentType::LinkedInPost,
+        'status' => PostPlatformStatus::Pending,
+    ]);
+
+    SocialAccount::connectIdentity(
+        $this->workspace,
+        Platform::LinkedInPage,
+        'li-same',
+        ['username' => 'page', 'status' => Status::Connected],
+        $account,
+    );
+
+    expect($pending->fresh()->platform)->toBe(Platform::LinkedInPage)
+        ->and($pending->fresh()->content_type)->toBe(ContentType::LinkedInPagePost);
+});
+
+test('reconnecting the same variant leaves pending targets untouched', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Instagram,
+        'platform_user_id' => 'ig-same',
+    ]);
+
+    $post = Post::factory()->create(['workspace_id' => $this->workspace->id]);
+
+    $pending = PostPlatform::factory()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $account->id,
+        'platform' => Platform::Instagram->value,
+        'content_type' => ContentType::InstagramStory,
+        'status' => PostPlatformStatus::Pending,
+    ]);
+
+    $before = $pending->updated_at;
+
+    SocialAccount::connectIdentity(
+        $this->workspace,
+        Platform::Instagram,
+        'ig-same',
+        ['username' => 'fresh', 'status' => Status::Connected],
+        $account,
+    );
+
+    expect($pending->fresh()->platform)->toBe(Platform::Instagram)
+        ->and($pending->fresh()->content_type)->toBe(ContentType::InstagramStory)
+        ->and($pending->fresh()->updated_at->equalTo($before))->toBeTrue();
 });

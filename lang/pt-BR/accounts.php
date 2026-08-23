@@ -145,6 +145,7 @@ return [
         'network_taken' => 'Este workspace já tem uma conta para esta rede. Desconecte-a primeiro.',
         'wrong_account' => 'Essa é outra conta. Autorize a que você está reconectando.',
         'all_connected' => 'Todas as contas deste login já estão conectadas.',
+        'busy' => 'Outra conexão ainda está sendo concluída. Tente novamente em instantes.',
         'error_connecting_page' => 'Erro ao conectar página. Por favor, tente novamente.',
         'error_connecting_channel' => 'Erro ao conectar canal. Por favor, tente novamente.',
         'session_expired' => 'Sessão expirada. Por favor, tente novamente.',

@@ -145,6 +145,7 @@ return [
         'network_taken' => 'Ta przestrzeń robocza ma już konto dla tej sieci. Najpierw je rozłącz.',
         'wrong_account' => 'To inne konto. Autoryzuj to, które ponownie łączysz.',
         'all_connected' => 'Wszystkie konta z tego logowania są już połączone.',
+        'busy' => 'Inne łączenie wciąż się kończy. Spróbuj ponownie za chwilę.',
         'error_connecting_page' => 'Błąd podczas łączenia strony. Spróbuj ponownie.',
         'error_connecting_channel' => 'Błąd podczas łączenia kanału. Spróbuj ponownie.',
         'session_expired' => 'Sesja wygasła. Spróbuj ponownie.',

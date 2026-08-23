@@ -147,6 +147,7 @@ return [
         'network_taken' => 'Dieser Workspace hat bereits ein Konto für dieses Netzwerk. Trenne es zuerst.',
         'wrong_account' => 'Das ist ein anderes Konto. Autorisiere das Konto, das du neu verbindest.',
         'all_connected' => 'Alle Konten dieses Logins sind bereits verbunden.',
+        'busy' => 'Eine andere Verbindung wird noch abgeschlossen. Bitte versuche es gleich erneut.',
         'error_connecting_page' => 'Fehler beim Verbinden der Seite. Bitte versuche es erneut.',
         'error_connecting_channel' => 'Fehler beim Verbinden des Kanals. Bitte versuche es erneut.',
         'session_expired' => 'Sitzung abgelaufen. Bitte versuche es erneut.',

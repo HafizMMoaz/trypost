@@ -6,6 +6,8 @@ namespace App\Models;
 
 use App\Enums\Notification\Channel;
 use App\Enums\Notification\Type;
+use App\Enums\PostPlatform\ContentType;
+use App\Enums\PostPlatform\Status as PostPlatformStatus;
 use App\Enums\SocialAccount\Platform as SocialPlatform;
 use App\Enums\SocialAccount\Status;
 use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
@@ -13,6 +15,7 @@ use App\Jobs\SendNotification;
 use App\Mail\AccountDisconnected;
 use App\Observers\SocialAccountObserver;
 use Database\Factories\SocialAccountFactory;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -111,14 +114,18 @@ class SocialAccount extends Model
         // The one-per-network rule is a config flag, so no database constraint
         // can hold it and the observer's check-then-insert would let two popups
         // finishing at once seat two different identities on one network.
-        return Cache::lock("social_connect:{$workspace->id}:{$platform->network()}", 10)
-            ->block(5, fn (): self => static::persistIdentity(
-                $workspace,
-                $platform,
-                $platformUserId,
-                $values,
-                $reconnect,
-            ));
+        try {
+            return Cache::lock("social_connect:{$workspace->id}:{$platform->network()}", 10)
+                ->block(5, fn (): self => static::persistIdentity(
+                    $workspace,
+                    $platform,
+                    $platformUserId,
+                    $values,
+                    $reconnect,
+                ));
+        } catch (LockTimeoutException) {
+            throw NetworkAlreadyConnectedException::connectInProgress($platform);
+        }
     }
 
     /**
@@ -147,13 +154,17 @@ class SocialAccount extends Model
                 throw NetworkAlreadyConnectedException::identityMismatch($platform);
             }
 
+            $previousPlatform = $reconnect->platform;
+
             try {
                 $reconnect->update($values);
-
-                return $reconnect;
             } catch (UniqueConstraintViolationException) {
                 throw new NetworkAlreadyConnectedException($platform);
             }
+
+            static::realignPendingTargets($reconnect, $previousPlatform, $platform);
+
+            return $reconnect;
         }
 
         try {
@@ -164,6 +175,36 @@ class SocialAccount extends Model
 
             return $account;
         }
+    }
+
+    /**
+     * Reconnecting through the other variant of a network (Instagram directly
+     * after Facebook, a LinkedIn profile after its page) moves the card to the
+     * new platform. Post targets carry their own `platform` snapshot and that
+     * snapshot is what picks the publisher, the queue and the scopes checked
+     * before publishing, so a stale one fails the post on permissions it never
+     * needed. Published rows keep their snapshot — it records what really went
+     * out, and the platform_post_id belongs to that flavor of the API.
+     */
+    private static function realignPendingTargets(self $account, SocialPlatform $from, SocialPlatform $to): void
+    {
+        if ($from === $to) {
+            return;
+        }
+
+        $supported = array_values(array_map(
+            fn (ContentType $contentType): string => $contentType->value,
+            ContentType::forPlatform($to),
+        ));
+
+        $account->postPlatforms()
+            ->where('status', PostPlatformStatus::Pending)
+            ->whereNotIn('content_type', $supported)
+            ->update(['content_type' => ContentType::defaultFor($to)->value]);
+
+        $account->postPlatforms()
+            ->where('status', PostPlatformStatus::Pending)
+            ->update(['platform' => $to->value]);
     }
 
     public function postPlatforms(): HasMany
