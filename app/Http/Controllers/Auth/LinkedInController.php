@@ -194,13 +194,13 @@ class LinkedInController extends SocialController
                     return $this->popupCallback(false, __('accounts.popup_callback.wrong_account'), $this->platform->value);
                 }
 
-                $this->connectOrganization($workspace, $pending, $organization);
+                $this->connectOrganization($workspace, $pending, $organization, $reconnect);
             } else {
                 if ($reconnect !== null && (string) data_get($pending, 'person.id') !== (string) $reconnect->platform_user_id) {
                     return $this->popupCallback(false, __('accounts.popup_callback.wrong_account'), $this->platform->value);
                 }
 
-                $this->connectPerson($workspace, $pending);
+                $this->connectPerson($workspace, $pending, $reconnect);
             }
 
             session()->forget('linkedin_pending');
@@ -220,10 +220,9 @@ class LinkedInController extends SocialController
     /**
      * The user's personal LinkedIn profile becomes a `linkedin` account.
      */
-    private function connectPerson(Workspace $workspace, array $pending): void
+    private function connectPerson(Workspace $workspace, array $pending, ?SocialAccount $reconnect): void
     {
         $person = $pending['person'];
-        $reconnect = $this->reconnectAccount($workspace);
 
         SocialAccount::connectIdentity(
             $workspace,
@@ -268,10 +267,9 @@ class LinkedInController extends SocialController
      * @param  array<string, mixed>  $pending
      * @param  array<string, mixed>  $organization
      */
-    private function connectOrganization(Workspace $workspace, array $pending, array $organization): void
+    private function connectOrganization(Workspace $workspace, array $pending, array $organization, ?SocialAccount $reconnect): void
     {
         $organizationId = data_get($organization, 'id');
-        $reconnect = $this->reconnectAccount($workspace);
 
         SocialAccount::connectIdentity(
             $workspace,
