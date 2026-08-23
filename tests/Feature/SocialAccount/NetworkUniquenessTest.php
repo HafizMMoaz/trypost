@@ -518,3 +518,62 @@ test('reconnecting the same variant leaves pending targets untouched', function 
         ->and($pending->fresh()->content_type)->toBe(ContentType::InstagramStory)
         ->and($pending->fresh()->updated_at->equalTo($before))->toBeTrue();
 });
+
+test('a variant move carries a retrying target, which still has a publish ahead of it', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Instagram,
+        'platform_user_id' => 'shared-ig-id',
+        'scopes' => ['instagram_business_content_publish'],
+    ]);
+
+    $post = Post::factory()->create(['workspace_id' => $this->workspace->id]);
+
+    $retrying = PostPlatform::factory()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $account->id,
+        'platform' => Platform::Instagram->value,
+        'status' => PostPlatformStatus::Retrying,
+    ]);
+
+    SocialAccount::connectIdentity(
+        $this->workspace,
+        Platform::InstagramFacebook,
+        'shared-ig-id',
+        ['username' => 'brand', 'scopes' => ['instagram_content_publish'], 'status' => Status::Connected],
+        $account,
+    );
+
+    expect($retrying->fresh()->platform)->toBe(Platform::InstagramFacebook)
+        ->and(array_diff(
+            $retrying->fresh()->platform->requiredPublishScopes(),
+            $account->fresh()->scopes,
+        ))->toBe([]);
+});
+
+test('a variant move leaves a failed target on the platform it failed against', function () {
+    $account = SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::Instagram,
+        'platform_user_id' => 'shared-ig-id',
+    ]);
+
+    $post = Post::factory()->create(['workspace_id' => $this->workspace->id]);
+
+    $failed = PostPlatform::factory()->create([
+        'post_id' => $post->id,
+        'social_account_id' => $account->id,
+        'platform' => Platform::Instagram->value,
+        'status' => PostPlatformStatus::Failed,
+    ]);
+
+    SocialAccount::connectIdentity(
+        $this->workspace,
+        Platform::InstagramFacebook,
+        'shared-ig-id',
+        ['username' => 'brand', 'status' => Status::Connected],
+        $account,
+    );
+
+    expect($failed->fresh()->platform)->toBe(Platform::Instagram);
+});

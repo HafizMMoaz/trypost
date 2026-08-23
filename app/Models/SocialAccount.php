@@ -26,6 +26,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 #[ObservedBy(SocialAccountObserver::class)]
@@ -157,12 +158,16 @@ class SocialAccount extends Model
             $previousPlatform = $reconnect->platform;
 
             try {
-                $reconnect->update($values);
+                // The card and the targets that still have to publish through it
+                // move together or not at all.
+                DB::transaction(function () use ($reconnect, $values, $previousPlatform, $platform): void {
+                    $reconnect->update($values);
+
+                    static::realignUnpublishedTargets($reconnect, $previousPlatform, $platform);
+                });
             } catch (UniqueConstraintViolationException) {
                 throw new NetworkAlreadyConnectedException($platform);
             }
-
-            static::realignPendingTargets($reconnect, $previousPlatform, $platform);
 
             return $reconnect;
         }
@@ -183,14 +188,20 @@ class SocialAccount extends Model
      * new platform. Post targets carry their own `platform` snapshot and that
      * snapshot is what picks the publisher, the queue and the scopes checked
      * before publishing, so a stale one fails the post on permissions it never
-     * needed. Published rows keep their snapshot — it records what really went
-     * out, and the platform_post_id belongs to that flavor of the API.
+     * needed.
+     *
+     * Only targets that still have a publish ahead of them move. Published rows
+     * record what really went out under a platform_post_id from that flavor of
+     * the API; failed ones are terminal; a publishing one has a job mid-flight
+     * that already read the snapshot it is working from.
      */
-    private static function realignPendingTargets(self $account, SocialPlatform $from, SocialPlatform $to): void
+    private static function realignUnpublishedTargets(self $account, SocialPlatform $from, SocialPlatform $to): void
     {
         if ($from === $to) {
             return;
         }
+
+        $awaitingPublish = [PostPlatformStatus::Pending, PostPlatformStatus::Retrying];
 
         $supported = array_values(array_map(
             fn (ContentType $contentType): string => $contentType->value,
@@ -198,12 +209,12 @@ class SocialAccount extends Model
         ));
 
         $account->postPlatforms()
-            ->where('status', PostPlatformStatus::Pending)
+            ->whereIn('status', $awaitingPublish)
             ->whereNotIn('content_type', $supported)
             ->update(['content_type' => ContentType::defaultFor($to)->value]);
 
         $account->postPlatforms()
-            ->where('status', PostPlatformStatus::Pending)
+            ->whereIn('status', $awaitingPublish)
             ->update(['platform' => $to->value]);
     }
 
