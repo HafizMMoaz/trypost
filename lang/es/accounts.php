@@ -77,6 +77,7 @@ return [
         'error_generic' => 'No se pudo iniciar la conexión. Inténtalo de nuevo.',
         'network_taken' => 'Este workspace ya tiene un canal de Telegram conectado. Desconéctalo primero.',
         'wrong_chat' => 'Publica el comando en el canal que estás reconectando.',
+        'busy' => 'Otra conexión aún se está completando. Vuelve a enviar el comando en un momento.',
     ],
 
     'facebook' => [

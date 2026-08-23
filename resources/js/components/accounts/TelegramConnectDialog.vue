@@ -76,7 +76,7 @@ useWorkspaceEcho<{ nonce: string }>(
     },
 );
 
-const KNOWN_CONNECT_ERRORS = ['network_taken', 'wrong_chat'];
+const KNOWN_CONNECT_ERRORS = ['network_taken', 'wrong_chat', 'busy'];
 
 useWorkspaceEcho<{ nonce: string; reason: string }>(
     '.telegram.connect.failed',

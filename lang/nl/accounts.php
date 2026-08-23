@@ -77,6 +77,7 @@ return [
         'error_generic' => 'Kon de koppeling niet starten. Probeer het opnieuw.',
         'network_taken' => 'Deze workspace heeft al een Telegram-kanaal gekoppeld. Koppel dat eerst los.',
         'wrong_chat' => 'Plaats de opdracht in het kanaal dat je opnieuw koppelt.',
+        'busy' => 'Een andere koppeling wordt nog afgerond. Plaats de opdracht zo meteen opnieuw.',
     ],
 
     'facebook' => [

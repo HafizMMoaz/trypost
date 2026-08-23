@@ -77,6 +77,7 @@ return [
         'error_generic' => 'Impossibile avviare il collegamento. Riprova.',
         'network_taken' => 'Questo workspace ha già un canale Telegram collegato. Scollegalo prima.',
         'wrong_chat' => 'Pubblica il comando nel canale che stai ricollegando.',
+        'busy' => 'Una connessione precedente è ancora in corso. Invia di nuovo il comando tra un istante.',
     ],
 
     'facebook' => [

@@ -79,6 +79,7 @@ return [
         'error_generic' => 'Bağlantı başlatılamadı. Lütfen tekrar deneyin.',
         'network_taken' => 'Bu çalışma alanında zaten bağlı bir Telegram kanalı var. Önce bağlantısını kesin.',
         'wrong_chat' => 'Komutu yeniden bağladığınız kanalda paylaşın.',
+        'busy' => 'Başka bir bağlantı hâlâ tamamlanıyor. Komutu birazdan tekrar gönderin.',
     ],
 
     'facebook' => [

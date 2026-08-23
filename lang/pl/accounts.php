@@ -77,6 +77,7 @@ return [
         'error_generic' => 'Nie udało się rozpocząć łączenia. Spróbuj ponownie.',
         'network_taken' => 'Ta przestrzeń robocza ma już połączony kanał Telegram. Najpierw go rozłącz.',
         'wrong_chat' => 'Opublikuj polecenie w kanale, który ponownie łączysz.',
+        'busy' => 'Inne łączenie wciąż się kończy. Wyślij polecenie ponownie za chwilę.',
     ],
 
     'facebook' => [

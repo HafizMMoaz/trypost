@@ -79,6 +79,7 @@ return [
         'error_generic' => 'Die Verbindung konnte nicht gestartet werden. Bitte versuche es erneut.',
         'network_taken' => 'Dieser Workspace hat bereits einen verbundenen Telegram-Kanal. Trenne ihn zuerst.',
         'wrong_chat' => 'Poste den Befehl in dem Kanal, den du neu verbindest.',
+        'busy' => 'Eine andere Verbindung wird noch abgeschlossen. Sende den Befehl gleich erneut.',
     ],
 
     'facebook' => [
