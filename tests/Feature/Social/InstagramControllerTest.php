@@ -184,3 +184,42 @@ test('instagram connect redirects to create workspace if none exists', function 
 
     $response->assertRedirect(route('app.workspaces.create'));
 });
+
+test('instagram callback refuses an identity already connected via the facebook variant', function () {
+    config()->set('trypost.allow_multiple_social_accounts', true);
+
+    SocialAccount::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'platform' => Platform::InstagramFacebook,
+        'platform_user_id' => 'shared-ig-id',
+        'username' => 'brand',
+    ]);
+
+    session([
+        'social_connect_workspace' => $this->workspace->id,
+    ]);
+
+    $socialiteUser = Mockery::mock(SocialiteUser::class);
+    $socialiteUser->shouldReceive('getId')->andReturn('shared-ig-id');
+    $socialiteUser->shouldReceive('getNickname')->andReturn('brand');
+    $socialiteUser->shouldReceive('getName')->andReturn('Brand');
+    $socialiteUser->shouldReceive('getAvatar')->andReturn(null);
+    $socialiteUser->token = 'test-access-token';
+    $socialiteUser->refreshToken = 'test-refresh-token';
+    $socialiteUser->expiresIn = 5184000;
+    $socialiteUser->user = ['account_type' => 'BUSINESS'];
+
+    Socialite::shouldReceive('driver')
+        ->with('instagram')
+        ->andReturn(Mockery::mock([
+            'user' => $socialiteUser,
+        ]));
+
+    $response = $this->actingAs($this->user)->get(route('app.social.instagram.callback'));
+
+    $response->assertOk();
+    $response->assertInertia(fn (AssertableInertia $page) => $page->where('success', false));
+    $response->assertInertia(fn (AssertableInertia $page) => $page->where('message', __('accounts.popup_callback.all_connected')));
+
+    expect($this->workspace->socialAccounts()->where('platform_user_id', 'shared-ig-id')->count())->toBe(1);
+});

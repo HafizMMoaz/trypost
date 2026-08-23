@@ -60,6 +60,13 @@ class InstagramController extends SocialController
             $tokenExpiresAt = now()->addSeconds($expiresIn);
             $reconnect = $this->reconnectAccount($workspace);
 
+            // Instagram Login returns a single identity, but it shares a network
+            // with the Facebook variant: without this the same account could be
+            // seated twice, once under each platform.
+            if ($this->filterConnectableIdentities($workspace, [['id' => $socialUser->getId()]], 'id', $reconnect) === []) {
+                return $this->noConnectableIdentities($reconnect, 'wrong_account');
+            }
+
             SocialAccount::connectIdentity(
                 $workspace,
                 $this->platform,
