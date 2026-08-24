@@ -95,7 +95,6 @@ const canNavigateTo = (stepNumber: number): boolean =>
                                     })
                                 "
                                 :data-testid="`welcome-step-${stepNumber}`"
-                                :dusk="`welcome-step-${stepNumber}`"
                             >
                                 <span
                                     class="h-2 w-full rounded-full bg-primary transition-opacity hover:opacity-70 motion-reduce:transition-none"
@@ -105,7 +104,6 @@ const canNavigateTo = (stepNumber: number): boolean =>
                                 v-else
                                 class="flex h-6 w-8 items-center"
                                 :data-testid="`welcome-step-${stepNumber}`"
-                                :dusk="`welcome-step-${stepNumber}`"
                                 :aria-current="
                                     stepNumber === step ? 'step' : undefined
                                 "

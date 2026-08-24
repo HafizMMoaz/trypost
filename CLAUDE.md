@@ -314,13 +314,19 @@ Self-hosted compose / `.env.example` set this `true`. When the env is unset, the
     - Example: `$this->postJson(route('app.posts.store'))` instead of `$this->postJson('/posts')`.
     - With params: `route('app.posts.ai.create.finalize', $creationId)`.
 
-## Dusk (Browser Tests)
+## Browser Tests (Pest + Playwright)
 
-- In Dusk tests, ALWAYS use named routes via `route()` helper. NEVER hardcode URLs like `'https://trypost.test/login'`.
-    - Example: `$browser->visit(route('login'))` instead of `$browser->visit('https://trypost.test/login')`.
-- ALWAYS use `dusk` selectors (`@selector-name`) for interacting with and asserting elements. NEVER use CSS classes (`.text-red-600`), tag names, or text strings.
-    - Add `dusk="my-element"` attributes to Vue components and use `$browser->click('@my-element')`, `$browser->waitFor('@my-element')`, etc.
-    - Example: `$browser->waitFor('@input-error')` instead of `$browser->waitFor('.text-red-600')`.
+Browser tests live in `tests/Browser` and run on `pestphp/pest-plugin-browser` driving Playwright. **Laravel Dusk is not installed** — there is no `DuskTestCase`, no `$browser` object, and no `browse()`. Do not add `dusk="..."` attributes; they select nothing.
+
+- ALWAYS use named routes via `route()`. NEVER hardcode URLs like `'https://trypost.test/login'`.
+    - Example: `visit(route('login'))`.
+- ALWAYS target elements by `data-testid`. NEVER use CSS classes (`.text-red-600`), tag names, or text strings.
+    - `@my-element` resolves to `[data-testid="my-element"]`, so add `data-testid="my-element"` in the Vue component and use `$page->click('@my-element')`.
+    - Bind it for repeated elements: `:data-testid="`connect-${platform.value}`"`.
+- Assertions do NOT auto-wait on SPA paint. Wait for the element to mount and lay out first — see the `waitFor*TestId()` helper at the top of `tests/Browser/WelcomeConnectTest.php` and copy the pattern under a file-unique name (these helpers are global functions; a duplicated name collides across test files).
+- `BrowserTestCase` sets `$fakesVite = false` on purpose: these tests load real built assets, so faking Vite blanks the app.
+- End page assertions with `->assertNoJavaScriptErrors()`.
+- CI runs them un-parallelised (`php artisan test tests/Browser --compact`) against `npm run build` output, so keep them independent of a running dev server.
 
 ## Array Data Access
 

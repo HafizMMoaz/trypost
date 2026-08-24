@@ -256,7 +256,6 @@ const cards = computed<ConnectCard[]>(() => {
                     size="sm"
                     class="mt-auto w-full"
                     :data-testid="`connect-${card.platform.value}`"
-                    :dusk="`connect-${card.platform.value}`"
                     @click="startConnect(card.platform.value)"
                 >
                     {{

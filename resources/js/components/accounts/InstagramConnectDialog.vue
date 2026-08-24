@@ -40,7 +40,6 @@ const showsFacebook = () => props.methods.includes(Platform.InstagramFacebook);
         <DialogContent
             class="sm:max-w-md"
             data-testid="instagram-connect-dialog"
-            dusk="instagram-connect-dialog"
         >
             <DialogHeader>
                 <div class="flex items-start gap-3">
@@ -66,7 +65,6 @@ const showsFacebook = () => props.methods.includes(Platform.InstagramFacebook);
                     variant="outline"
                     class="h-auto justify-start gap-3 px-4 py-3 text-left whitespace-normal"
                     data-testid="instagram-connect-standalone"
-                    dusk="instagram-connect-standalone"
                     @click="choose(Platform.Instagram)"
                 >
                     <span
@@ -89,7 +87,6 @@ const showsFacebook = () => props.methods.includes(Platform.InstagramFacebook);
                     variant="outline"
                     class="h-auto justify-start gap-3 px-4 py-3 text-left whitespace-normal"
                     data-testid="instagram-connect-facebook"
-                    dusk="instagram-connect-facebook"
                     @click="choose(Platform.InstagramFacebook)"
                 >
                     <span
