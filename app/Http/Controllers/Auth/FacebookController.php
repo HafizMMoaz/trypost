@@ -9,11 +9,10 @@ use App\Enums\SocialAccount\Status;
 use App\Exceptions\SocialAccount\ConnectPopupException;
 use App\Exceptions\SocialAccount\NetworkAlreadyConnectedException;
 use App\Models\SocialAccount;
-use App\Services\Social\Meta\GraphPaginator;
+use App\Services\Social\Meta\ManagedPages;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Uri;
 use Inertia\Inertia;
@@ -21,9 +20,11 @@ use Inertia\Response as InertiaResponse;
 use Laravel\Socialite\Facades\Socialite;
 use Symfony\Component\HttpFoundation\Response;
 
-class FacebookController extends SocialController
+class FacebookController extends MetaController
 {
-    protected string $driver = 'facebook';
+    protected string $pageFields = 'id,name,username,picture{url},access_token';
+
+    protected string $noPagesKey = 'accounts.popup_callback.no_facebook_pages';
 
     protected SocialPlatform $platform = SocialPlatform::Facebook;
 
@@ -33,6 +34,7 @@ class FacebookController extends SocialController
         'pages_read_engagement',
         'pages_manage_posts',
         'read_insights',
+        'business_management',
     ];
 
     public function connect(Request $request): Response
@@ -63,27 +65,29 @@ class FacebookController extends SocialController
         try {
             $socialUser = Socialite::driver($this->driver)->usingGraphVersion($this->graphVersion())->user();
 
-            // Trigger public_profile and pages_show_list API calls
-            // These calls are needed for Meta app review permission verification
-            Http::get(config('trypost.platforms.facebook.graph_api').'/me', [
-                'fields' => 'id,name',
-                'access_token' => $socialUser->token,
-            ]);
+            $this->touchProfile($socialUser->token);
 
-            $pages = $this->fetchPages($socialUser->token);
+            $granted = $this->grantedScopes($socialUser->token);
+
+            if ($granted instanceof InertiaResponse) {
+                return $granted;
+            }
+
+            $walk = ManagedPages::forUser($this->graphApi(), $socialUser->token, $this->pageFields, $granted, $this->deadline());
+            $listed = $this->toPageCards($walk->pages);
+            $pages = ManagedPages::publishable($listed);
 
             if (empty($pages)) {
-                return $this->popupCallback(false, __('accounts.popup_callback.no_facebook_pages'), $this->platform->value);
+                return $this->noPagesOnOffer($walk, $listed);
             }
 
             $pages = $this->filterConnectableIdentities($workspace, $pages, 'id', $reconnect);
 
             if (empty($pages)) {
-                return $this->noConnectableIdentities($reconnect, 'page_not_found');
+                return $this->noConnectableIdentities($reconnect, 'page_not_found', $walk->complete);
             }
 
-            // If only one page, connect directly
-            if (count($pages) === 1) {
+            if (count($pages) === 1 && ($walk->complete || $reconnect !== null)) {
                 $page = $pages[0];
                 $avatarPath = uploadFromUrl(data_get($page, 'picture'));
 
@@ -98,7 +102,7 @@ class FacebookController extends SocialController
                         'access_token' => data_get($page, 'access_token'),
                         'refresh_token' => null,
                         'token_expires_at' => null,
-                        'scopes' => $this->scopes,
+                        'scopes' => $granted,
                         'status' => Status::Connected,
                         'error_message' => null,
                         'disconnected_at' => null,
@@ -119,6 +123,7 @@ class FacebookController extends SocialController
                 'facebook_oauth' => [
                     'user_token' => $socialUser->token,
                     'user_id' => $socialUser->getId(),
+                    'scopes' => $granted,
                     'pages' => $pages,
                     'reconnect_id' => $reconnect?->id,
                 ],
@@ -192,7 +197,7 @@ class FacebookController extends SocialController
                     'access_token' => data_get($selectedPage, 'access_token'),
                     'refresh_token' => null,
                     'token_expires_at' => null,
-                    'scopes' => $this->scopes,
+                    'scopes' => data_get($oauthData, 'scopes', $this->scopes),
                     'status' => Status::Connected,
                     'error_message' => null,
                     'disconnected_at' => null,
@@ -219,17 +224,12 @@ class FacebookController extends SocialController
         }
     }
 
-    private function fetchPages(string $userToken): array
+    /**
+     * @param  array<int, array<string, mixed>>  $pages
+     * @return list<array<string, mixed>>
+     */
+    private function toPageCards(array $pages): array
     {
-        $pages = GraphPaginator::all(
-            config('trypost.platforms.facebook.graph_api').'/me/accounts',
-            [
-                'access_token' => $userToken,
-                'fields' => 'id,name,username,picture{url},access_token',
-                'limit' => 100,
-            ],
-        );
-
         return collect($pages)->map(fn (array $page) => [
             'id' => data_get($page, 'id'),
             'name' => data_get($page, 'name'),
@@ -241,6 +241,6 @@ class FacebookController extends SocialController
 
     private function graphVersion(): string
     {
-        return Uri::of(config('trypost.platforms.facebook.graph_api'))->path();
+        return Uri::of($this->graphApi())->path();
     }
 }
