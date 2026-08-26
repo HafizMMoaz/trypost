@@ -58,7 +58,7 @@ class PostController extends Controller
         }
 
         if ($search = $request->input('search')) {
-            $query->where('content', 'ilike', "%{$search}%");
+            $query->whereLike('content', "%{$search}%");
         }
 
         $labelIds = $request->collect('labels')

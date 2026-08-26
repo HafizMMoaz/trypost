@@ -65,6 +65,50 @@ test('list posts only returns own workspace posts', function () {
         });
 });
 
+test('list posts filters by content search', function () {
+    $matching = Post::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'user_id' => $this->user->id,
+        'content' => 'Hello marketing world',
+    ]);
+    Post::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'user_id' => $this->user->id,
+        'content' => 'Something else entirely',
+    ]);
+
+    $response = TryPostServer::actingAs($this->user)
+        ->tool(ListPostsTool::class, ['search' => 'marketing']);
+
+    $response->assertOk()
+        ->assertStructuredContent(function (AssertableJson $json) use ($matching) {
+            $json->has('posts', 1, function (AssertableJson $post) use ($matching) {
+                $post->where('id', $matching->id)->etc();
+            })->etc();
+        });
+});
+
+test('list posts search is case insensitive', function () {
+    Post::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'user_id' => $this->user->id,
+        'content' => 'MARKETING CAMPAIGN',
+    ]);
+    Post::factory()->create([
+        'workspace_id' => $this->workspace->id,
+        'user_id' => $this->user->id,
+        'content' => 'Something else entirely',
+    ]);
+
+    $response = TryPostServer::actingAs($this->user)
+        ->tool(ListPostsTool::class, ['search' => 'marketing']);
+
+    $response->assertOk()
+        ->assertStructuredContent(function (AssertableJson $json) {
+            $json->has('posts', 1)->etc();
+        });
+});
+
 test('get post returns PostResource shape', function () {
     $post = Post::factory()->create([
         'workspace_id' => $this->workspace->id,
